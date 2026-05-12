@@ -4,6 +4,10 @@ import {
   downloadSpreadsheetTemplate,
 } from "./data/createSpreadsheetTemplate";
 import { parseSpreadsheet } from "./data/parseSpreadsheet";
+import { FinanceBarChart } from "@/components/charts/FinanceBarChart";
+import { FinanceLineChart } from "@/components/charts/FinanceLineChart";
+import { FinancePieChart } from "@/components/charts/FinancePieChart";
+import { Button } from "@/components/ui/button";
 
 function App() {
   const fileInputRef = useRef(null);
@@ -37,16 +41,19 @@ function App() {
     <main>
       <h1>Spreadsheet parser test</h1>
 
-      <div>
-        <button onClick={() => downloadSpreadsheetTemplate("Rumit Mehta")}>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => downloadSpreadsheetTemplate("Rumit Mehta")}>
           Download template
-        </button>
-        <button onClick={() => downloadDummySpreadsheet("Rumit Mehta Dummy")}>
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => downloadDummySpreadsheet("Rumit Mehta Dummy")}
+        >
           Download dummy spreadsheet
-        </button>
-        <button onClick={() => fileInputRef.current.click()}>
+        </Button>
+        <Button variant="outline" onClick={() => fileInputRef.current.click()}>
           Upload and parse spreadsheet
-        </button>
+        </Button>
       </div>
 
       <input
@@ -56,6 +63,15 @@ function App() {
         type="file"
         hidden
       />
+
+      <section>
+        <h2>Charts</h2>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <FinancePieChart />
+          <FinanceBarChart />
+          <FinanceLineChart />
+        </div>
+      </section>
 
       {error && <p>{error}</p>}
 
