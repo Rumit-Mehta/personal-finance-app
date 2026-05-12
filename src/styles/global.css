@@ -4,4 +4,41 @@
 
 body {
   margin: 0;
+  font-family: Arial, sans-serif;
+}
+
+main {
+  padding: 24px;
+}
+
+button {
+  margin: 0 8px 8px 0;
+}
+
+section {
+  margin-top: 24px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background: #f3f3f3;
+}
+
+dt {
+  font-weight: 700;
+}
+
+dd {
+  margin: 0 0 8px;
 }
