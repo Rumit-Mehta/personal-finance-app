@@ -134,6 +134,8 @@ function createAccounts(accountRows) {
       name: stringValue(row.name),
       type: stringValue(row.type),
       institution: stringValue(row.institution),
+      accountKind: accountKindValue(row.accountKind),
+      parentAccountId: stringValue(row.parentAccountId),
       currency: stringValue(row.currency) || "GBP",
       openingBalance: numberValue(row.openingBalance),
       manualBalance: optionalNumberValue(row.manualBalance),
@@ -142,7 +144,27 @@ function createAccounts(accountRows) {
     accounts.set(accountId, account);
   });
 
+  validateAccountHierarchy(accounts);
+
   return accounts;
+}
+
+function validateAccountHierarchy(accounts) {
+  accounts.forEach((account) => {
+    if (!account.parentAccountId) {
+      return;
+    }
+
+    if (account.parentAccountId === account.id) {
+      throw new Error(`Account ${account.id} cannot be its own parent`);
+    }
+
+    if (!accounts.has(account.parentAccountId)) {
+      throw new Error(
+        `Account ${account.id} uses unknown parent account ${account.parentAccountId}`,
+      );
+    }
+  });
 }
 
 function createTransactions(transactionRows, accounts) {
@@ -268,6 +290,18 @@ function optionalNumberValue(value) {
   }
 
   return numberValue(value);
+}
+
+function accountKindValue(value) {
+  const accountKind = stringValue(value) || "actual";
+
+  if (accountKind !== "actual" && accountKind !== "virtual") {
+    throw new Error(
+      `Invalid accountKind value: ${accountKind}. Expected actual or virtual.`,
+    );
+  }
+
+  return accountKind;
 }
 
 function dateValue(value) {

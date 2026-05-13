@@ -20,7 +20,9 @@ export class User {
   }
 
   get totalAccountBalance() {
-    return sumMapValues(this.accounts, (account) => account.balance);
+    return sumMapValues(this.accounts, (account) => {
+      return account.isActual ? account.balance : 0;
+    });
   }
 
   get totalInvestments() {

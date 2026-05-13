@@ -4,6 +4,8 @@ export class Account {
     name = "",
     type = "",
     institution = "",
+    accountKind = "actual",
+    parentAccountId = "",
     openingBalance = 0,
     manualBalance = null,
     currency = "GBP",
@@ -13,6 +15,8 @@ export class Account {
     this.name = name;
     this.type = type;
     this.institution = institution;
+    this.accountKind = accountKind || "actual";
+    this.parentAccountId = parentAccountId;
     this.openingBalance = Number(openingBalance);
     this.manualBalance = manualBalance === null ? null : Number(manualBalance);
     this.currency = currency;
@@ -40,6 +44,14 @@ export class Account {
 
   get balance() {
     return this.manualBalance ?? this.calculatedBalance;
+  }
+
+  get isVirtual() {
+    return this.accountKind === "virtual";
+  }
+
+  get isActual() {
+    return !this.isVirtual;
   }
 
   get hasManualBalance() {
