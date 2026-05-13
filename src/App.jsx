@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   downloadDummySpreadsheet,
   downloadSpreadsheetTemplate,
@@ -7,12 +7,24 @@ import { parseSpreadsheet } from "./data/parseSpreadsheet";
 import { FinanceBarChart } from "@/components/charts/FinanceBarChart";
 import { FinanceLineChart } from "@/components/charts/FinanceLineChart";
 import { FinancePieChart } from "@/components/charts/FinancePieChart";
+import { BarChartInteractive } from "@/components/charts/BarChartInteractive";
 import { Button } from "@/components/ui/button";
 
 function App() {
   const fileInputRef = useRef(null);
   const [parsedData, setParsedData] = useState(null);
   const [error, setError] = useState("");
+  const [theme, setTheme] = useState("light");
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  function handleThemeToggle() {
+    setTheme((currentTheme) =>
+      currentTheme === "dark" ? "light" : "dark",
+    );
+  }
 
   async function handleFileChange(event) {
     const file = event.target.files[0];
@@ -35,11 +47,28 @@ function App() {
   }
 
   const accounts = parsedData ? [...parsedData.accounts.values()] : [];
+  const accountNames = parsedData ? parsedData.accounts : new Map();
   const transactions = parsedData ? parsedData.transactions.slice(0, 25) : [];
 
   return (
     <main>
-      <h1>Spreadsheet parser test</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-normal">
+            Spreadsheet parser test
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Current accent changes with the active theme.
+          </p>
+        </div>
+        <Button
+          className="bg-accent text-accent-foreground hover:bg-accent/90"
+          onClick={handleThemeToggle}
+          type="button"
+        >
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </Button>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => downloadSpreadsheetTemplate("Rumit Mehta")}>
@@ -66,10 +95,11 @@ function App() {
 
       <section>
         <h2>Charts</h2>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <FinancePieChart />
+        <div className="grid gap-4">
+          {/* <FinancePieChart />
           <FinanceBarChart />
-          <FinanceLineChart />
+          <FinanceLineChart /> */}
+          <BarChartInteractive />
         </div>
       </section>
 
@@ -99,6 +129,8 @@ function App() {
                   <th>Name</th>
                   <th>Type</th>
                   <th>Institution</th>
+                  <th>Kind</th>
+                  <th>Parent</th>
                   <th>Balance</th>
                   <th>Transactions</th>
                 </tr>
@@ -109,6 +141,13 @@ function App() {
                     <td>{account.name}</td>
                     <td>{account.type}</td>
                     <td>{account.institution}</td>
+                    <td>{account.accountKind}</td>
+                    <td>
+                      {account.parentAccountId
+                        ? accountNames.get(account.parentAccountId)?.name ??
+                          account.parentAccountId
+                        : ""}
+                    </td>
                     <td>{formatCurrency(account.balance)}</td>
                     <td>{account.transactionCount}</td>
                   </tr>
