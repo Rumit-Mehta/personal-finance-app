@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "monzo:auth": "node integrations/banks/monzo/auth-server.js",
+    "monzo:fetch": "node integrations/banks/monzo/fetch-data.js"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
