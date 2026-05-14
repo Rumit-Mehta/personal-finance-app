@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "monzo:auth": "node integrations/banks/monzo/auth-server.js",
-    "monzo:fetch": "node integrations/banks/monzo/fetch-data.js"
+    "monzo:fetch": "node integrations/banks/monzo/fetch-data.js",
+    "monzo:pfa": "node integrations/banks/monzo/create-pfa.js"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
@@ -20,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
+    "fflate": "^0.8.2",
     "lucide-react": "^1.14.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

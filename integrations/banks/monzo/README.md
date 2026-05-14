@@ -49,6 +49,22 @@ npm run monzo:fetch -- --no-expand-merchant
 
 Monzo documents a Strong Customer Authentication window for transactions: fetch full history soon after authentication if you need it. Later syncs may be limited to recent transaction history.
 
+## Create a PFA vault
+
+For personal/local use, convert the saved Monzo JSON into an encrypted `.pfa` vault:
+
+```sh
+PFA_PASSWORD="choose-a-strong-password" npm run monzo:pfa
+```
+
+Optional paths:
+
+```sh
+PFA_PASSWORD="choose-a-strong-password" npm run monzo:pfa -- --input integrations/banks/monzo/data/monzo-data.json --output integrations/banks/monzo/data/monzo-data.pfa
+```
+
+The password is not stored. If it is lost, the `.pfa` vault cannot be recovered.
+
 ## Code layout
 
 - `auth-server.js` starts a local OAuth callback server.

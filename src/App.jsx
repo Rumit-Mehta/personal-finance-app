@@ -3,7 +3,17 @@ import {
   downloadDummySpreadsheet,
   downloadSpreadsheetTemplate,
 } from "./data/createSpreadsheetTemplate";
-import { parseSpreadsheet } from "./data/parseSpreadsheet";
+import { downloadUpdatedSpreadsheet } from "./data/updateSpreadsheet";
+import {
+  appDataFromFinanceData,
+  createPfaVault,
+  DuplicateImportError,
+  financeDataFromAppData,
+  mergeFinanceData,
+  openPfaVault,
+} from "./data/vault";
+import { excelFileToFinanceData } from "./data/vault/adapters/excel";
+import { monzoJsonFileToFinanceData } from "./data/vault/adapters/monzo";
 import { FinanceBarChart } from "@/components/charts/FinanceBarChart";
 import { FinanceLineChart } from "@/components/charts/FinanceLineChart";
 import { FinancePieChart } from "@/components/charts/FinancePieChart";
@@ -12,8 +22,13 @@ import { Button } from "@/components/ui/button";
 
 function App() {
   const fileInputRef = useRef(null);
+  const monzoJsonInputRef = useRef(null);
+  const pfaInputRef = useRef(null);
   const [parsedData, setParsedData] = useState(null);
+  const [vaultData, setVaultData] = useState(null);
+  const [vaultPassword, setVaultPassword] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [theme, setTheme] = useState("light");
 
   useEffect(() => {
@@ -34,15 +49,123 @@ function App() {
     }
 
     try {
-      const nextParsedData = await parseSpreadsheet(file);
+      const nextVaultData = await excelFileToFinanceData(file);
 
-      setParsedData(nextParsedData);
+      setVaultData(nextVaultData);
+      setParsedData(appDataFromFinanceData(nextVaultData));
       setError("");
+      setMessage("Loaded Excel data into the vault model.");
     } catch (parseError) {
       setParsedData(null);
+      setVaultData(null);
       setError(parseError.message);
+      setMessage("");
     } finally {
       event.target.value = "";
+    }
+  }
+
+  async function handlePfaFileChange(event) {
+    const file = event.target.files[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      requireVaultPassword();
+
+      const nextVaultData = await openPfaVault(file, vaultPassword);
+
+      setVaultData(nextVaultData);
+      setParsedData(appDataFromFinanceData(nextVaultData));
+      setError("");
+      setMessage("Opened encrypted PFA vault.");
+    } catch (openError) {
+      setError(openError.message);
+      setMessage("");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleMonzoJsonChange(event) {
+    const file = event.target.files[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const incomingVaultData = await monzoJsonFileToFinanceData(file);
+      const nextVaultData = vaultData
+        ? mergeFinanceData(
+            vaultData,
+            incomingVaultData,
+            incomingVaultData.imports[0],
+          )
+        : incomingVaultData;
+
+      setVaultData(nextVaultData);
+      setParsedData(appDataFromFinanceData(nextVaultData));
+      setError("");
+      setMessage("Imported Monzo JSON into the vault model.");
+    } catch (importError) {
+      if (importError instanceof DuplicateImportError) {
+        setMessage("That Monzo JSON file has already been imported.");
+        setError("");
+      } else {
+        setError(importError.message);
+        setMessage("");
+      }
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleDownloadPfa() {
+    try {
+      requireVaultPassword();
+
+      const nextVaultData = currentVaultData();
+      const buffer = await createPfaVault(nextVaultData, vaultPassword);
+
+      downloadArrayBuffer(buffer, "my-finances.pfa", "application/octet-stream");
+      setVaultData(nextVaultData);
+      setError("");
+      setMessage("Exported encrypted PFA vault.");
+    } catch (downloadError) {
+      setError(downloadError.message);
+      setMessage("");
+    }
+  }
+
+  async function handleDownloadExcel() {
+    try {
+      await downloadUpdatedSpreadsheet(appDataFromFinanceData(currentVaultData()));
+      setError("");
+      setMessage("Exported Excel workbook.");
+    } catch (downloadError) {
+      setError(downloadError.message);
+      setMessage("");
+    }
+  }
+
+  function currentVaultData() {
+    if (vaultData) {
+      return vaultData;
+    }
+
+    if (parsedData) {
+      return financeDataFromAppData(parsedData);
+    }
+
+    throw new Error("Load Excel, Monzo JSON, or a PFA vault first.");
+  }
+
+  function requireVaultPassword() {
+    if (!vaultPassword) {
+      throw new Error("Enter a vault password first.");
     }
   }
 
@@ -81,14 +204,57 @@ function App() {
           Download dummy spreadsheet
         </Button>
         <Button variant="outline" onClick={() => fileInputRef.current.click()}>
-          Upload and parse spreadsheet
+          Upload Excel
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => monzoJsonInputRef.current.click()}
+        >
+          Import Monzo JSON
+        </Button>
+        <Button variant="outline" onClick={() => pfaInputRef.current.click()}>
+          Open PFA
+        </Button>
+        <Button onClick={handleDownloadPfa} disabled={!parsedData}>
+          Save PFA
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={handleDownloadExcel}
+          disabled={!parsedData}
+        >
+          Export Excel
         </Button>
       </div>
+
+      <label className="mt-4 block max-w-sm text-sm">
+        <span className="mb-1 block font-medium">Vault password</span>
+        <input
+          className="w-full rounded-md border border-border bg-background px-3 py-2"
+          onChange={(event) => setVaultPassword(event.target.value)}
+          type="password"
+          value={vaultPassword}
+        />
+      </label>
 
       <input
         accept=".xlsx"
         onChange={handleFileChange}
         ref={fileInputRef}
+        type="file"
+        hidden
+      />
+      <input
+        accept=".pfa"
+        onChange={handlePfaFileChange}
+        ref={pfaInputRef}
+        type="file"
+        hidden
+      />
+      <input
+        accept=".json"
+        onChange={handleMonzoJsonChange}
+        ref={monzoJsonInputRef}
         type="file"
         hidden
       />
@@ -103,6 +269,7 @@ function App() {
         </div>
       </section>
 
+      {message && <p>{message}</p>}
       {error && <p>{error}</p>}
 
       {parsedData && (
@@ -199,6 +366,18 @@ function formatCurrency(value) {
 
 function formatDate(value) {
   return new Intl.DateTimeFormat("en-GB").format(value);
+}
+
+function downloadArrayBuffer(buffer, fileName, type) {
+  const blob = new Blob([buffer], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  link.click();
+
+  URL.revokeObjectURL(url);
 }
 
 export default App;
