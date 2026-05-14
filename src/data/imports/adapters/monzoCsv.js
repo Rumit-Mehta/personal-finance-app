@@ -17,12 +17,18 @@ export const monzoCsvAdapter = {
   sourceType: "monzo-csv",
   sourceProvider: "monzo",
 
+  /**
+   * Checks whether parsed CSV headers match the Monzo export format.
+   */
   detect({ headers }) {
     const headerSet = new Set(headers);
 
     return REQUIRED_HEADERS.every((header) => headerSet.has(header));
   },
 
+  /**
+   * Wraps parsed CSV rows with Monzo-specific import metadata.
+   */
   createRawBatch({ parsedCsv, file, fileHash, importedAt }) {
     validateHeaders(parsedCsv.headers);
 
@@ -38,6 +44,9 @@ export const monzoCsvAdapter = {
     };
   },
 
+  /**
+   * Maps Monzo raw rows into staged import rows and generated pot rows.
+   */
   normalize(rawBatch) {
     return {
       adapterId: this.id,
@@ -51,6 +60,9 @@ export const monzoCsvAdapter = {
   },
 };
 
+/**
+ * Fails early when a CSV looks like Monzo but is missing required columns.
+ */
 function validateHeaders(headers) {
   const headerSet = new Set(headers);
   const missingHeaders = REQUIRED_HEADERS.filter((header) => !headerSet.has(header));
@@ -60,6 +72,9 @@ function validateHeaders(headers) {
   }
 }
 
+/**
+ * Normalizes all Monzo CSV rows and adds actual child accounts for pot transfers.
+ */
 function normalizeMonzoCsvRows(rawBatch) {
   const potAccounts = new Map();
   const rows = rawBatch.rows.flatMap((row) => {
@@ -105,6 +120,9 @@ function normalizeMonzoCsvRows(rawBatch) {
   };
 }
 
+/**
+ * Maps one original Monzo CSV row into the canonical staged transaction shape.
+ */
 function normalizeMonzoCsvRow(row, rawBatch) {
   const raw = row.raw;
   const sourceId = text(raw["Transaction ID"]);
@@ -135,6 +153,9 @@ function normalizeMonzoCsvRow(row, rawBatch) {
   };
 }
 
+/**
+ * Detects a Monzo pot transfer row and returns the corresponding pot account.
+ */
 function monzoPotTransfer(row) {
   if (row.type !== "Pot transfer") {
     return null;
@@ -173,6 +194,9 @@ function monzoPotTransfer(row) {
   };
 }
 
+/**
+ * Creates the generated opposite-side transaction for a Monzo pot movement.
+ */
 function createPotMirrorRow(row, potTransfer) {
   return {
     ...row,
@@ -191,12 +215,18 @@ function createPotMirrorRow(row, potTransfer) {
   };
 }
 
+/**
+ * Extracts the display account name from Monzo names like "Wardrobe Pot".
+ */
 function potNameFromMerchant(value) {
   const match = text(value).match(/^(.+?)\s+pot$/iu);
 
   return match ? match[1].trim() : "";
 }
 
+/**
+ * Converts Monzo's UK date string into an ISO date string.
+ */
 function monzoDateToIsoDate(value) {
   const [day, month, year] = text(value).split("/");
 
@@ -207,6 +237,9 @@ function monzoDateToIsoDate(value) {
   return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
+/**
+ * Converts nullable values into trimmed strings for stable comparisons.
+ */
 function text(value) {
   if (value === null || value === undefined) {
     return "";
@@ -215,12 +248,18 @@ function text(value) {
   return String(value).trim();
 }
 
+/**
+ * Converts CSV numeric strings into finite numbers with a safe zero fallback.
+ */
 function number(value) {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * Converts a display name into a stable lowercase id segment.
+ */
 function slugify(value) {
   return text(value)
     .toLowerCase()

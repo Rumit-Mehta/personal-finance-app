@@ -1,6 +1,9 @@
 const EDITABLE_FIELDS = new Set(["category", "tag", "merchant", "notes"]);
 const MATCH_OPERATORS = new Set(["equals", "contains", "startsWith", "wildcard"]);
 
+/**
+ * Applies all enabled matching rules to every staged row in an import batch.
+ */
 export function applyImportRules(stagedBatch, rules = []) {
   const applicableRules = normalizeImportRules(rules)
     .filter((rule) => rule.enabled)
@@ -12,12 +15,18 @@ export function applyImportRules(stagedBatch, rules = []) {
   };
 }
 
+/**
+ * Normalizes and orders rules before they are applied or counted.
+ */
 export function normalizeImportRules(rules = []) {
   return rules
     .map((rule, index) => normalizeImportRule(rule, index))
     .sort((left, right) => left.order - right.order);
 }
 
+/**
+ * Converts a partial rule object into the complete rule shape used by the app.
+ */
 export function normalizeImportRule(rule = {}, index = 0) {
   const match = rule.match ?? {};
   const set = rule.set ?? {};
@@ -45,6 +54,9 @@ export function normalizeImportRule(rule = {}, index = 0) {
   };
 }
 
+/**
+ * Creates a new enabled reusable import rule with a generated id.
+ */
 export function createImportRule({
   name = "",
   enabled = true,
@@ -66,6 +78,9 @@ export function createImportRule({
   });
 }
 
+/**
+ * Checks whether one rule's match clause applies to a staged import row.
+ */
 export function importRuleMatchesRow(rule, row) {
   const normalizedRule = normalizeImportRule(rule);
   const fieldValue = text(row[normalizedRule.match.field]).toLowerCase();
@@ -90,6 +105,9 @@ export function importRuleMatchesRow(rule, row) {
   return fieldValue.includes(matchValue);
 }
 
+/**
+ * Counts how many rows in a batch would be affected by a rule.
+ */
 export function countImportRuleMatches(batch, rule) {
   if (!batch) {
     return 0;
@@ -100,6 +118,9 @@ export function countImportRuleMatches(batch, rule) {
   return batch.rows.filter((row) => importRuleMatchesRow(normalizedRule, row)).length;
 }
 
+/**
+ * Applies matching rules to one row, preserving the ids of applied rules.
+ */
 function applyRulesToRow(row, rules) {
   let nextRow = {
     ...row,
@@ -121,6 +142,9 @@ function applyRulesToRow(row, rules) {
   return nextRow;
 }
 
+/**
+ * Checks source filters so rules only run against compatible import batches.
+ */
 function ruleAppliesToBatch(rule, batch) {
   if (rule.sourceType && rule.sourceType !== batch.sourceType) {
     return false;
@@ -133,6 +157,9 @@ function ruleAppliesToBatch(rule, batch) {
   return true;
 }
 
+/**
+ * Converts a user wildcard pattern into a case-insensitive regular expression.
+ */
 function wildcardToRegExp(value) {
   const escaped = value
     .split("*")
@@ -142,6 +169,9 @@ function wildcardToRegExp(value) {
   return new RegExp(`^${escaped}$`, "iu");
 }
 
+/**
+ * Generates a stable-enough id for new rules in browser and test contexts.
+ */
 function createRuleId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -150,6 +180,9 @@ function createRuleId() {
   return `rule-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * Converts nullable values into trimmed strings for matching and storage.
+ */
 function text(value) {
   if (value === null || value === undefined) {
     return "";

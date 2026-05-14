@@ -1,3 +1,6 @@
+/**
+ * Parses CSV text into named raw rows using the first non-empty row as headers.
+ */
 export function parseCsv(text) {
   const records = parseCsvRecords(String(text ?? ""));
   const headerRecord = records.find((record) => !isBlankRecord(record));
@@ -28,6 +31,9 @@ export function parseCsv(text) {
   return { headers, rows };
 }
 
+/**
+ * Splits CSV text into records while preserving quoted commas and newlines.
+ */
 export function parseCsvRecords(text) {
   const records = [];
   let record = [];
@@ -83,6 +89,9 @@ export function parseCsvRecords(text) {
   return records;
 }
 
+/**
+ * Converts one positional CSV record into an object keyed by header name.
+ */
 function recordToObject(headers, record) {
   return headers.reduce((row, header, index) => {
     row[header] = record[index] ?? "";
@@ -90,14 +99,23 @@ function recordToObject(headers, record) {
   }, {});
 }
 
+/**
+ * Checks whether a parsed CSV record contains no useful cell values.
+ */
 function isBlankRecord(record) {
   return record.every((field) => String(field ?? "").trim() === "");
 }
 
+/**
+ * Checks whether an object-style CSV row has no useful field values.
+ */
 function isBlankRawRow(raw) {
   return Object.values(raw).every((value) => String(value ?? "").trim() === "");
 }
 
+/**
+ * Removes the UTF byte-order marker sometimes found at the start of CSV files.
+ */
 function stripByteOrderMark(value) {
   return String(value ?? "").replace(/^\uFEFF/u, "");
 }

@@ -4,6 +4,9 @@ import { findImportAdapter, findImportAdapterById } from "./adapters/index.js";
 import { parseCsv } from "./csv.js";
 import { applyImportRules } from "./rules.js";
 
+/**
+ * Reads an uploaded file, parses it as CSV, and wraps it in a raw import batch.
+ */
 export async function parseImportFile(file) {
   const importedAt = new Date().toISOString();
   const [text, fileHash] = await Promise.all([file.text(), hashInput(file)]);
@@ -22,6 +25,9 @@ export async function parseImportFile(file) {
   });
 }
 
+/**
+ * Uses the raw batch's adapter to map bank-specific rows into staged rows.
+ */
 export function normalizeImportBatch(rawBatch) {
   const adapter = findImportAdapterById(rawBatch.adapterId);
 
@@ -32,10 +38,16 @@ export function normalizeImportBatch(rawBatch) {
   return adapter.normalize(rawBatch);
 }
 
+/**
+ * Runs reusable import rules against staged rows.
+ */
 export function applyRulesToImportBatch(stagedBatch, rules = []) {
   return applyImportRules(stagedBatch, rules);
 }
 
+/**
+ * Assigns user-selected main-account details while preserving generated child rows.
+ */
 export function assignImportBatchAccount(batch, account) {
   const normalizedAccount = {
     ...importAccount(account),
@@ -69,6 +81,9 @@ export function assignImportBatchAccount(batch, account) {
   };
 }
 
+/**
+ * Converts edited import rows and accounts into normalized vault finance data.
+ */
 export function financeDataFromEditedImport(editedBatch, options = {}) {
   const accounts = editedBatch.accounts ?? [];
   const accountIds = accounts.map((account) => account.id);
@@ -102,6 +117,9 @@ export function financeDataFromEditedImport(editedBatch, options = {}) {
   });
 }
 
+/**
+ * Convenience helper that parses, normalizes, and applies rules in one step.
+ */
 export async function importFileToEditedBatch(file, rules = []) {
   const rawBatch = await parseImportFile(file);
   const stagedBatch = normalizeImportBatch(rawBatch);
@@ -109,6 +127,9 @@ export async function importFileToEditedBatch(file, rules = []) {
   return applyRulesToImportBatch(stagedBatch, rules);
 }
 
+/**
+ * Maps a staged import row into the transaction shape stored in the vault.
+ */
 function importRowToTransaction(row) {
   return {
     id: row.id,
@@ -126,6 +147,9 @@ function importRowToTransaction(row) {
   };
 }
 
+/**
+ * Normalizes account-like objects from the UI or adapters before vault conversion.
+ */
 function importAccount(account = {}) {
   return {
     id: text(account.id),
@@ -146,6 +170,9 @@ function importAccount(account = {}) {
   };
 }
 
+/**
+ * Converts nullable values into trimmed strings for normalized import data.
+ */
 function text(value) {
   if (value === null || value === undefined) {
     return "";
@@ -154,6 +181,9 @@ function text(value) {
   return String(value).trim();
 }
 
+/**
+ * Converts user-entered or imported numeric values into finite numbers.
+ */
 function number(value) {
   const parsed = Number(value);
 
