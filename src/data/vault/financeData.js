@@ -13,6 +13,7 @@ const ARRAY_KEYS = [
   "debts",
   "valueHistory",
   "imports",
+  "importRules",
 ];
 
 export class DuplicateImportError extends Error {
@@ -43,6 +44,7 @@ export function createEmptyFinanceData(overrides = {}) {
     debts: [],
     valueHistory: [],
     imports: [],
+    importRules: [],
     ...overrides,
   });
 }
@@ -66,6 +68,7 @@ export function normalizeFinanceData(data = {}) {
     debts: normalizeValueEntities(data.debts, "debt"),
     valueHistory: toArray(data.valueHistory).map(normalizeValueHistory),
     imports: toArray(data.imports).map(normalizeImportRecord),
+    importRules: toArray(data.importRules).map(normalizeImportRule),
   };
 
   validateFinanceData(normalized);
@@ -167,6 +170,7 @@ export function financeDataFromAppData(appData, metadata = {}) {
       value: number(history.value),
     })),
     imports: toArray(appData?.imports),
+    importRules: toArray(appData?.importRules),
   });
 }
 
@@ -239,6 +243,7 @@ export function appDataFromFinanceData(financeData) {
       date: new Date(history.date),
     })),
     imports: data.imports,
+    importRules: data.importRules,
     rawRows: rawRowsFromFinanceData(data),
   };
 }
@@ -276,6 +281,7 @@ export function mergeFinanceData(existingData, incomingData, importRecord) {
       existing.imports,
       normalizedImport ? [...incoming.imports, normalizedImport] : incoming.imports,
     ),
+    importRules: mergeById(existing.importRules, incoming.importRules),
   });
 
   validateFinanceData(merged);
@@ -590,6 +596,31 @@ function normalizeImportRecord(importRecord = {}) {
     accountIds: toArray(importRecord.accountIds).map(text),
     transactionCount: number(importRecord.transactionCount),
     importedAt: isoDateTime(importRecord.importedAt),
+  };
+}
+
+function normalizeImportRule(rule = {}) {
+  const set = {};
+
+  ["category", "tag", "merchant", "notes"].forEach((field) => {
+    if (rule.set?.[field] !== undefined) {
+      set[field] = text(rule.set[field]);
+    }
+  });
+
+  return {
+    id: text(rule.id),
+    name: text(rule.name),
+    enabled: rule.enabled !== false,
+    sourceType: text(rule.sourceType),
+    sourceProvider: text(rule.sourceProvider),
+    order: number(rule.order),
+    match: {
+      field: text(rule.match?.field),
+      operator: text(rule.match?.operator) || "contains",
+      value: text(rule.match?.value),
+    },
+    set,
   };
 }
 

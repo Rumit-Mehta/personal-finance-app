@@ -80,6 +80,7 @@ export async function openPfaVault(fileOrBuffer, password) {
     debts: readOptionalJsonFile(innerZip, "debts.json", []),
     valueHistory: readOptionalJsonFile(innerZip, "valueHistory.json", []),
     imports: readOptionalJsonFile(innerZip, "imports.json", []),
+    importRules: readOptionalJsonFile(innerZip, "importRules.json", []),
   };
 
   validateFinanceData(financeData);
@@ -101,6 +102,7 @@ function zipFinanceData(data) {
     "debts.json": jsonToBytes(data.debts),
     "valueHistory.json": jsonToBytes(data.valueHistory),
     "imports.json": jsonToBytes(data.imports),
+    "importRules.json": jsonToBytes(data.importRules),
   });
 }
 

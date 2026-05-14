@@ -66,7 +66,7 @@ export function monzoJsonToFinanceData(monzoData, importOptions = {}) {
         name: pot.name || pot.id,
         type: "pot",
         institution: "Monzo",
-        accountKind: "virtual",
+        accountKind: "actual",
         parentAccountId: accountId,
         currency: pot.currency || currency,
         openingBalance: 0,
