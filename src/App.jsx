@@ -466,6 +466,9 @@ function App() {
 
   return (
     <main>
+      <p className="mb-3 text-sm font-semibold text-muted-foreground">
+        Welcome back, Rumit
+      </p>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-normal">

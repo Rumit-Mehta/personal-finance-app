@@ -14,3 +14,5 @@ A minimal React + Vite scaffold.
 ## Data Model
 
 `.pfa` is the canonical local finance file. Excel is supported as a human-readable import/export format, but the app reads and writes normalized finance data through the PFA vault layer.
+
+See [docs/model-data-flow.md](docs/model-data-flow.md) for the model graph and import/export data flow.
