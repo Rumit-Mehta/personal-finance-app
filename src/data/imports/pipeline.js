@@ -72,6 +72,11 @@ export function assignImportBatchAccount(batch, account) {
   return {
     ...batch,
     accounts: [normalizedAccount, ...childAccounts],
+    balances: (batch.balances ?? []).map((balance) => ({
+      ...balance,
+      accountId:
+        balance.accountRole === "main" ? normalizedAccount.id : balance.accountId,
+    })),
     rows: batch.rows.map((row) => ({
       ...row,
       account: row.accountRole === "pot" ? row.account : normalizedAccount.id,
@@ -106,7 +111,7 @@ export function financeDataFromEditedImport(editedBatch, options = {}) {
     },
     user: {},
     accounts,
-    balances: [],
+    balances: (editedBatch.balances ?? []).map(importBalanceSnapshot),
     transactions: editedBatch.rows.map(importRowToTransaction),
     tags: [],
     investments: [],
@@ -115,6 +120,23 @@ export function financeDataFromEditedImport(editedBatch, options = {}) {
     imports: [importRecord],
     importRules: options.importRules ?? [],
   });
+}
+
+/**
+ * Maps a staged balance into the snapshot shape stored in the vault.
+ */
+function importBalanceSnapshot(balance) {
+  return {
+    id: balance.id,
+    accountId: balance.accountId,
+    date: balance.date,
+    balance: balance.balance,
+    currency: balance.currency,
+    sourceType: balance.sourceType,
+    sourceProvider: balance.sourceProvider,
+    sourceId: balance.sourceId,
+    notes: balance.notes,
+  };
 }
 
 /**

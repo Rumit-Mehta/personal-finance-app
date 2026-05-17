@@ -1,4 +1,5 @@
 import { AccountsTable } from "@/components/finance/AccountsTable";
+import { BalanceSnapshotsSection } from "@/components/finance/BalanceSnapshotsSection";
 import { ChartsSection } from "@/components/finance/ChartsSection";
 import { DashboardHeader } from "@/components/finance/DashboardHeader";
 import { FileActions } from "@/components/finance/FileActions";
@@ -33,7 +34,7 @@ export function FinanceDashboard({ profileName, workspace }) {
         vaultPassword={workspace.vaultPassword}
       />
 
-      <ChartsSection />
+      <ChartsSection netWorthSeries={workspace.netWorthSeries} />
 
       <StatusMessages error={workspace.error} message={workspace.message} />
 
@@ -71,6 +72,16 @@ export function FinanceDashboard({ profileName, workspace }) {
           <AccountsTable
             accountNames={workspace.accountNames}
             accounts={workspace.accounts}
+          />
+          <BalanceSnapshotsSection
+            accountNames={workspace.accountNames}
+            accounts={workspace.accounts}
+            balanceSnapshotDraft={workspace.balanceSnapshotDraft}
+            balanceSnapshots={workspace.balanceSnapshots}
+            onBalanceSnapshotDraftChange={
+              workspace.handleBalanceSnapshotDraftChange
+            }
+            onSaveBalanceSnapshot={workspace.handleSaveBalanceSnapshot}
           />
           <TransactionsPreviewTable transactions={workspace.transactions} />
         </>

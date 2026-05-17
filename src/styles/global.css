@@ -180,6 +180,16 @@ select {
   padding: 16px;
 }
 
+.balance-panel {
+  align-items: end;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin: 16px 0;
+  padding: 16px;
+}
+
 .rule-panel label {
   display: grid;
   gap: 6px;

@@ -11,6 +11,14 @@ const REQUIRED_HEADERS = [
   "Notes and #tags",
   "Description",
 ];
+const BALANCE_HEADERS = [
+  "Balance",
+  "Running Balance",
+  "Running balance",
+  "Balance after transaction",
+  "Balance After Transaction",
+  "Account Balance",
+];
 
 export const monzoCsvAdapter = {
   id: "monzo-csv",
@@ -97,6 +105,10 @@ function normalizeMonzoCsvRows(rawBatch) {
       createPotMirrorRow(normalizedRow, potTransfer),
     ];
   });
+  const balances = rows
+    .filter((row) => row.accountRole === "main")
+    .map(createBalanceSnapshotForRow)
+    .filter(Boolean);
 
   return {
     accounts: [
@@ -116,6 +128,7 @@ function normalizeMonzoCsvRows(rawBatch) {
       },
       ...potAccounts.values(),
     ],
+    balances,
     rows,
   };
 }
@@ -144,6 +157,7 @@ function normalizeMonzoCsvRow(row, rawBatch) {
     tag: "",
     notes: text(raw["Notes and #tags"]),
     currency: text(raw.Currency) || "GBP",
+    balance: optionalMoney(rawBalanceValue(raw)),
     type: text(raw.Type),
     isGenerated: false,
     generatedFromId: "",
@@ -216,6 +230,34 @@ function createPotMirrorRow(row, potTransfer) {
 }
 
 /**
+ * Creates a bank-reported balance snapshot when the CSV has a running balance.
+ */
+function createBalanceSnapshotForRow(row) {
+  if (row.balance === null) {
+    return null;
+  }
+
+  return {
+    id: `${row.id}:balance`,
+    accountId: row.account,
+    accountRole: row.accountRole,
+    date: row.date,
+    balance: row.balance,
+    currency: row.currency,
+    sourceType: row.sourceType,
+    sourceProvider: row.sourceProvider,
+    sourceId: row.sourceId,
+    notes: "Imported from CSV running balance",
+  };
+}
+
+function rawBalanceValue(raw) {
+  const header = BALANCE_HEADERS.find((columnName) => text(raw[columnName]));
+
+  return header ? raw[header] : "";
+}
+
+/**
  * Extracts the display account name from Monzo names like "Wardrobe Pot".
  */
 function potNameFromMerchant(value) {
@@ -255,6 +297,18 @@ function number(value) {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function optionalMoney(value) {
+  const rawValue = text(value);
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsed = Number(rawValue.replace(/[£,\s]/gu, ""));
+
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /**

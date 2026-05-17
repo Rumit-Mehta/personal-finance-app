@@ -9,9 +9,13 @@ import {
   normalizeImportBatch,
   parseImportFile,
 } from "../src/data/imports/index.js";
+import { deriveDailyNetWorthSeries } from "../src/data/balanceHistory.js";
 import { parseCsv } from "../src/data/imports/csv.js";
 import {
+  appDataFromFinanceData,
+  createManualBalanceSnapshot,
   createPfaVault,
+  normalizeFinanceData,
   openPfaVault,
 } from "../src/data/vault/index.js";
 import { monzoJsonToFinanceData } from "../src/data/vault/adapters/monzo.js";
@@ -105,8 +109,31 @@ test("financeDataFromEditedImport converts edited batches into normalized financ
   assert.equal(financeData.transactions[0].sourceType, "monzo-csv");
   assert.equal(financeData.transactions[0].sourceId, "tx_1");
   assert.equal(financeData.transactions[0].category, "transport");
+  assert.equal(financeData.balances.length, 0);
   assert.equal(financeData.imports[0].transactionCount, 1);
   assert.equal(financeData.importRules[0].id, rule.id);
+});
+
+test("CSV imports with a running balance column create balance snapshots", async () => {
+  const stagedBatch = normalizeImportBatch(
+    await parseImportFile(fileFromText(monzoCsvWithBalanceText())),
+  );
+  const assignedBatch = assignImportBatchAccount(stagedBatch, {
+    id: "acc_main",
+    name: "Main Current Account",
+    type: "current",
+    institution: "Monzo",
+    accountKind: "actual",
+    currency: "GBP",
+  });
+  const financeData = financeDataFromEditedImport(assignedBatch);
+
+  assert.equal(stagedBatch.balances.length, 1);
+  assert.equal(stagedBatch.balances[0].balance, 96.79);
+  assert.equal(financeData.balances.length, 1);
+  assert.equal(financeData.balances[0].accountId, "acc_main");
+  assert.equal(financeData.balances[0].sourceType, "monzo-csv");
+  assert.equal(financeData.balances[0].sourceProvider, "monzo");
 });
 
 test("assignImportBatchAccount retargets staged rows to an existing account", async () => {
@@ -234,6 +261,117 @@ test("Monzo JSON pots import as actual child accounts", () => {
   assert.equal(potAccount.manualBalance, 200);
 });
 
+test("manual balance snapshots override bank snapshots on the same day", async () => {
+  const bankData = financeDataFromEditedImport(
+    assignImportBatchAccount(
+      normalizeImportBatch(await parseImportFile(fileFromText(monzoCsvWithBalanceText()))),
+      {
+        id: "acc_main",
+        name: "Main Current Account",
+        type: "current",
+        institution: "Monzo",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ),
+  );
+  const manualSnapshot = createManualBalanceSnapshot({
+    accountId: "acc_main",
+    date: "2023-10-15",
+    balance: 120,
+    currency: "GBP",
+    notes: "Corrected against bank app",
+  });
+  const correctedData = normalizeFinanceData({
+    ...bankData,
+    balances: [...bankData.balances, manualSnapshot],
+  });
+  const appData = appDataFromFinanceData(correctedData);
+  const account = appData.accounts.get("acc_main");
+  const series = deriveDailyNetWorthSeries(correctedData, {
+    startDate: "2023-10-15",
+    endDate: "2023-10-15",
+  });
+
+  assert.equal(account.balance, 120);
+  assert.equal(series[0].netWorth, 120);
+});
+
+test("daily net worth anchors forward from manual balance corrections", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "acc_1",
+        name: "Current Account",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 0,
+      },
+      {
+        id: "acc_2",
+        name: "Savings",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 100,
+      },
+    ],
+    transactions: [
+      {
+        id: "txn_1",
+        account: "acc_1",
+        date: "2026-01-01",
+        amount: 100,
+      },
+      {
+        id: "txn_2",
+        account: "acc_1",
+        date: "2026-01-02",
+        amount: -25,
+      },
+      {
+        id: "txn_3",
+        account: "acc_1",
+        date: "2026-01-03",
+        amount: 10,
+      },
+      {
+        id: "txn_4",
+        account: "acc_2",
+        date: "2026-01-03",
+        amount: -10,
+      },
+    ],
+    balances: [
+      {
+        id: "bank:acc_1:2026-01-02",
+        accountId: "acc_1",
+        date: "2026-01-02",
+        balance: 75,
+        currency: "GBP",
+        sourceType: "csv",
+        sourceProvider: "bank",
+        sourceId: "row_2",
+      },
+      createManualBalanceSnapshot({
+        accountId: "acc_1",
+        date: "2026-01-02",
+        balance: 50,
+        currency: "GBP",
+      }),
+    ],
+  });
+  const series = deriveDailyNetWorthSeries(financeData, {
+    startDate: "2026-01-01",
+    endDate: "2026-01-03",
+  });
+
+  assert.deepEqual(series, [
+    { date: "2026-01-01", netWorth: 200 },
+    { date: "2026-01-02", netWorth: 150 },
+    { date: "2026-01-03", netWorth: 150 },
+  ]);
+});
+
 test("PFA vault round trip preserves importRules", async () => {
   const stagedBatch = normalizeImportBatch(
     await parseImportFile(fileFromText(monzoCsvText())),
@@ -255,10 +393,48 @@ test("PFA vault round trip preserves importRules", async () => {
   assert.equal(opened.importRules[0].set.category, "transport");
 });
 
+test("PFA vault round trip preserves balance snapshots", async () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "acc_1",
+        name: "Current Account",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ],
+    balances: [
+      createManualBalanceSnapshot({
+        accountId: "acc_1",
+        date: "2026-05-10",
+        balance: 123.45,
+        currency: "GBP",
+        notes: "Manual correction",
+      }),
+    ],
+    transactions: [],
+  });
+
+  const vault = await createPfaVault(financeData, "test-password");
+  const opened = await openPfaVault(vault, "test-password");
+
+  assert.equal(opened.balances.length, 1);
+  assert.equal(opened.balances[0].balance, 123.45);
+  assert.equal(opened.balances[0].sourceType, "manual");
+  assert.equal(opened.balances[0].notes, "Manual correction");
+});
+
 function monzoCsvText() {
   return [
     "Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In",
     'tx_1,15/10/2023,02:09:11,Card payment,Grab,🚕,Eating out,-3.21,GBP,-61000.00,IDR,"ride, late",Gedung,,Grab* A-123,,-3.21,',
+  ].join("\n");
+}
+
+function monzoCsvWithBalanceText() {
+  return [
+    "Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In,Balance",
+    'tx_1,15/10/2023,02:09:11,Card payment,Grab,🚕,Eating out,-3.21,GBP,-61000.00,IDR,"ride, late",Gedung,,Grab* A-123,,-3.21,,96.79',
   ].join("\n");
 }
 

@@ -100,6 +100,30 @@ export function validateFinanceData(data) {
     accountIds.add(account.id);
   });
 
+  data.balances.forEach((balance) => {
+    if (!balance.id) {
+      throw new Error("Every balance snapshot must have an id.");
+    }
+
+    if (!balance.accountId) {
+      throw new Error(`Balance snapshot ${balance.id} is missing an account.`);
+    }
+
+    if (!accountIds.has(balance.accountId)) {
+      throw new Error(
+        `Balance snapshot ${balance.id} uses unknown account ${balance.accountId}.`,
+      );
+    }
+
+    if (!balance.date || Number.isNaN(new Date(balance.date).getTime())) {
+      throw new Error(`Balance snapshot ${balance.id} has an invalid date.`);
+    }
+
+    if (!balance.currency) {
+      throw new Error(`Balance snapshot ${balance.id} is missing a currency.`);
+    }
+  });
+
   data.transactions.forEach((transaction) => {
     if (!transaction.id) {
       throw new Error("Every transaction must have an id.");
@@ -137,6 +161,19 @@ export function financeDataFromAppData(appData, metadata = {}) {
       currency: text(account.currency) || "GBP",
       openingBalance: number(account.openingBalance),
       manualBalance: optionalNumber(account.manualBalance),
+    })),
+    balances: toArray(appData?.balances).map((balance) => ({
+      id: text(balance.id),
+      accountId: text(balance.accountId),
+      date: isoDateTime(balance.date),
+      balance: number(balance.balance),
+      totalBalance: number(balance.totalBalance),
+      spendToday: number(balance.spendToday),
+      currency: text(balance.currency) || "GBP",
+      sourceType: text(balance.sourceType),
+      sourceProvider: text(balance.sourceProvider),
+      sourceId: text(balance.sourceId),
+      notes: text(balance.notes),
     })),
     transactions: toArray(appData?.transactions).map((transaction) => ({
       id: text(transaction.id),
@@ -177,6 +214,18 @@ export function financeDataFromAppData(appData, metadata = {}) {
 export function appDataFromFinanceData(financeData) {
   const data = normalizeFinanceData(financeData);
   const accounts = new Map();
+  const balanceSnapshotsByAccount = new Map();
+
+  data.balances.forEach((balance) => {
+    const snapshot = {
+      ...balance,
+      date: new Date(balance.date),
+    };
+    const accountSnapshots = balanceSnapshotsByAccount.get(balance.accountId) ?? [];
+
+    accountSnapshots.push(snapshot);
+    balanceSnapshotsByAccount.set(balance.accountId, accountSnapshots);
+  });
 
   data.accounts.forEach((account) => {
     accounts.set(
@@ -191,6 +240,7 @@ export function appDataFromFinanceData(financeData) {
         openingBalance: account.openingBalance,
         manualBalance: account.manualBalance,
         currency: account.currency,
+        balanceSnapshots: balanceSnapshotsByAccount.get(account.id) ?? [],
       }),
     );
   });
@@ -234,6 +284,10 @@ export function appDataFromFinanceData(financeData) {
       debts,
     }),
     accounts,
+    balances: data.balances.map((balance) => ({
+      ...balance,
+      date: new Date(balance.date),
+    })),
     transactions,
     tags: new Map(data.tags.map((tag) => [tag.id, tag])),
     investments,
@@ -322,6 +376,58 @@ export function createImportRecord({
     accountIds,
     transactionCount,
     importedAt,
+  });
+}
+
+export function createBalanceSnapshot({
+  id = "",
+  accountId = "",
+  date = "",
+  balance = 0,
+  totalBalance = 0,
+  spendToday = 0,
+  currency = "GBP",
+  sourceType = "",
+  sourceProvider = "",
+  sourceId = "",
+  notes = "",
+} = {}) {
+  return normalizeBalance({
+    id,
+    accountId,
+    date,
+    balance,
+    totalBalance,
+    spendToday,
+    currency,
+    sourceType,
+    sourceProvider,
+    sourceId,
+    notes,
+  });
+}
+
+export function createManualBalanceSnapshot({
+  id = "",
+  accountId = "",
+  date = "",
+  balance = 0,
+  currency = "GBP",
+  notes = "",
+} = {}) {
+  const safeAccountId = text(accountId);
+  const snapshotDate = isoDate(date);
+
+  return createBalanceSnapshot({
+    id: id || `manual:${safeAccountId}:${snapshotDate}`,
+    accountId: safeAccountId,
+    date: snapshotDate,
+    balance,
+    currency,
+    sourceType: "manual",
+    sourceProvider: "user",
+    sourceId: `manual:${safeAccountId}:${snapshotDate}`,
+    notes,
   });
 }
 
@@ -489,13 +595,15 @@ function normalizeBalance(balance = {}) {
   return {
     id: text(balance.id),
     accountId: text(balance.accountId),
-    date: isoDateTime(balance.date),
+    date: balance.date ? isoDateTime(balance.date) : "",
     balance: number(balance.balance),
     totalBalance: number(balance.totalBalance),
     spendToday: number(balance.spendToday),
     currency: text(balance.currency) || "GBP",
+    sourceType: text(balance.sourceType),
     sourceProvider: text(balance.sourceProvider),
     sourceId: text(balance.sourceId),
+    notes: text(balance.notes),
   };
 }
 
@@ -694,6 +802,17 @@ function rawRowsFromFinanceData(data) {
       tagId: transaction.tag,
       merchant: transaction.merchant,
       notes: transaction.notes,
+    })),
+    balances: data.balances.map((balance) => ({
+      balanceId: balance.id,
+      accountId: balance.accountId,
+      date: balance.date,
+      balance: balance.balance,
+      currency: balance.currency,
+      sourceType: balance.sourceType,
+      sourceProvider: balance.sourceProvider,
+      sourceId: balance.sourceId,
+      notes: balance.notes,
     })),
     tags: data.tags.map((tag) => ({
       tagId: tag.id,

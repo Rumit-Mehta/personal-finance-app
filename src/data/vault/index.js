@@ -15,8 +15,10 @@ import {
 
 export {
   appDataFromFinanceData,
+  createBalanceSnapshot,
   createEmptyFinanceData,
   createImportRecord,
+  createManualBalanceSnapshot,
   DuplicateImportError,
   financeDataFromAppData,
   isDuplicateImport,

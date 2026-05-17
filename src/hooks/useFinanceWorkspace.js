@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { deriveDailyNetWorthSeries } from "@/data/balanceHistory";
 import {
   applyRulesToImportBatch,
   assignImportBatchAccount,
@@ -11,6 +12,7 @@ import {
 import { downloadUpdatedSpreadsheet } from "@/data/updateSpreadsheet";
 import {
   appDataFromFinanceData,
+  createManualBalanceSnapshot,
   createPfaVault,
   DuplicateImportError,
   financeDataFromAppData,
@@ -46,6 +48,12 @@ export function useFinanceWorkspace() {
   const [newAccountDraft, setNewAccountDraft] = useState(
     DEFAULT_NEW_ACCOUNT_DRAFT,
   );
+  const [balanceSnapshotDraft, setBalanceSnapshotDraft] = useState({
+    accountId: "",
+    date: todayDate(),
+    balance: "",
+    notes: "",
+  });
   const [ruleDraft, setRuleDraft] = useState(DEFAULT_RULE_DRAFT);
   const [vaultPassword, setVaultPassword] = useState("");
   const [error, setError] = useState("");
@@ -57,9 +65,20 @@ export function useFinanceWorkspace() {
   }, [theme]);
 
   const accounts = parsedData ? [...parsedData.accounts.values()] : [];
+  const balanceSnapshots = parsedData
+    ? [...parsedData.balances].sort(compareBalanceSnapshotsDescending)
+    : [];
   const importAccountOptions = accountOptionsFromParsedData(parsedData);
   const accountNames = parsedData ? parsedData.accounts : new Map();
   const transactions = parsedData ? parsedData.transactions.slice(0, 25) : [];
+  const balanceSnapshotDraftWithDefaults = {
+    ...balanceSnapshotDraft,
+    accountId: balanceSnapshotDraft.accountId || firstActualAccountId(accounts),
+    date: balanceSnapshotDraft.date || todayDate(),
+  };
+  const netWorthSeries = parsedData
+    ? deriveDailyNetWorthSeries(currentVaultData())
+    : [];
   const importPreviewAccountNames =
     createImportPreviewAccountNames(importPreview);
   const categorySuggestions = createCategorySuggestions(
@@ -327,6 +346,61 @@ export function useFinanceWorkspace() {
     }
   }
 
+  function handleBalanceSnapshotDraftChange(field, value) {
+    setBalanceSnapshotDraft((currentDraft) => ({
+      ...currentDraft,
+      [field]: value,
+    }));
+  }
+
+  function handleSaveBalanceSnapshot() {
+    try {
+      const account = accounts.find(
+        (currentAccount) =>
+          currentAccount.id === balanceSnapshotDraftWithDefaults.accountId,
+      );
+
+      if (!account) {
+        throw new Error("Choose an account before saving a balance correction.");
+      }
+
+      if (!balanceSnapshotDraftWithDefaults.date) {
+        throw new Error("Choose a date before saving a balance correction.");
+      }
+
+      if (String(balanceSnapshotDraft.balance).trim() === "") {
+        throw new Error("Enter a balance before saving a correction.");
+      }
+
+      const currentData = currentVaultData();
+      const snapshot = createManualBalanceSnapshot({
+        accountId: account.id,
+        date: balanceSnapshotDraftWithDefaults.date,
+        balance: balanceSnapshotDraft.balance,
+        currency: account.currency,
+        notes: balanceSnapshotDraft.notes,
+      });
+      const nextVaultData = {
+        ...currentData,
+        balances: upsertById(currentData.balances, snapshot),
+      };
+
+      setCurrentData(
+        nextVaultData,
+        `Saved balance correction for ${account.name || account.id}.`,
+      );
+      setBalanceSnapshotDraft((currentDraft) => ({
+        ...currentDraft,
+        accountId: account.id,
+        balance: "",
+        notes: "",
+      }));
+    } catch (snapshotError) {
+      setError(snapshotError.message);
+      setMessage("");
+    }
+  }
+
   function retargetImportPreview(account) {
     setImportPreview((currentPreview) =>
       currentPreview
@@ -487,6 +561,8 @@ export function useFinanceWorkspace() {
   return {
     accountNames,
     accounts,
+    balanceSnapshotDraft: balanceSnapshotDraftWithDefaults,
+    balanceSnapshots,
     bulkRuleMatchCount,
     categorySuggestions,
     csvInputRef,
@@ -503,7 +579,9 @@ export function useFinanceWorkspace() {
     handlePfaFileChange,
     handlePreviewFieldChange,
     handleRuleDraftChange,
+    handleBalanceSnapshotDraftChange,
     handleSaveDraftRule,
+    handleSaveBalanceSnapshot,
     handleSaveImportPreview,
     handleSelectedImportAccountChange,
     handleThemeToggle,
@@ -515,6 +593,7 @@ export function useFinanceWorkspace() {
     message,
     monzoJsonInputRef,
     newAccountDraft,
+    netWorthSeries,
     parsedData,
     pfaInputRef,
     ruleDraft,
@@ -524,4 +603,28 @@ export function useFinanceWorkspace() {
     transactions,
     vaultPassword,
   };
+}
+
+function todayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function firstActualAccountId(accounts) {
+  return (
+    accounts.find((account) => account.isActual)?.id ||
+    accounts[0]?.id ||
+    ""
+  );
+}
+
+function upsertById(items, nextItem) {
+  const merged = new Map(items.map((item) => [item.id, item]));
+
+  merged.set(nextItem.id, nextItem);
+
+  return [...merged.values()];
+}
+
+function compareBalanceSnapshotsDescending(left, right) {
+  return new Date(right.date).getTime() - new Date(left.date).getTime();
 }

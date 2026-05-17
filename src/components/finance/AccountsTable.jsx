@@ -13,6 +13,7 @@ export function AccountsTable({ accountNames, accounts }) {
             <th>Kind</th>
             <th>Parent</th>
             <th>Balance</th>
+            <th>Snapshots</th>
             <th>Transactions</th>
           </tr>
         </thead>
@@ -30,6 +31,7 @@ export function AccountsTable({ accountNames, accounts }) {
                   : ""}
               </td>
               <td>{formatCurrency(account.balance)}</td>
+              <td>{account.balanceSnapshotCount}</td>
               <td>{account.transactionCount}</td>
             </tr>
           ))}

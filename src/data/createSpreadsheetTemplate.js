@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 const MONEY_COLUMNS = new Set([
   "amount",
+  "balance",
   "openingBalance",
   "manualBalance",
   "currentValue",
@@ -47,6 +48,33 @@ const SHEETS = {
       "notes",
     ],
     rows: [["txn_001", "acc_001", "2026-05-10", "", 0, "", "tag_001", "", ""]],
+  },
+  balances: {
+    name: "Balances",
+    columns: [
+      "balanceId",
+      "accountId",
+      "date",
+      "balance",
+      "currency",
+      "sourceType",
+      "sourceProvider",
+      "sourceId",
+      "notes",
+    ],
+    rows: [
+      [
+        "manual:acc_001:2026-05-10",
+        "acc_001",
+        "2026-05-10",
+        0,
+        "GBP",
+        "manual",
+        "user",
+        "manual:acc_001:2026-05-10",
+        "",
+      ],
+    ],
   },
   tags: {
     name: "Tags",
@@ -313,6 +341,10 @@ function createDummySheetConfigs() {
     {
       ...SHEETS.transactions,
       rows: transactions,
+    },
+    {
+      ...SHEETS.balances,
+      rows: [],
     },
     {
       ...SHEETS.tags,
