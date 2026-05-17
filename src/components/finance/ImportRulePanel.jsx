@@ -1,19 +1,35 @@
+import { useEffect, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 
 export function ImportRulePanel({
   bulkRuleMatchCount,
   onApplyDraftRule,
-  onRuleDraftChange,
   onSaveDraftRule,
   ruleDraft,
 }) {
+  const [localRuleDraft, setLocalRuleDraft] = useState(ruleDraft);
+
+  useEffect(() => {
+    setLocalRuleDraft(ruleDraft);
+  }, [ruleDraft]);
+
+  function updateLocalRuleDraft(field, value) {
+    setLocalRuleDraft((currentDraft) => ({
+      ...currentDraft,
+      [field]: value,
+    }));
+  }
+
   return (
     <div className="rule-panel">
       <label>
         <span>Match field</span>
         <select
-          onChange={(event) => onRuleDraftChange("field", event.target.value)}
-          value={ruleDraft.field}
+          onChange={(event) =>
+            updateLocalRuleDraft("field", event.target.value)
+          }
+          value={localRuleDraft.field}
         >
           <option value="merchant">Merchant</option>
           <option value="description">Description</option>
@@ -26,9 +42,9 @@ export function ImportRulePanel({
         <span>Operator</span>
         <select
           onChange={(event) =>
-            onRuleDraftChange("operator", event.target.value)
+            updateLocalRuleDraft("operator", event.target.value)
           }
-          value={ruleDraft.operator}
+          value={localRuleDraft.operator}
         >
           <option value="wildcard">Wildcard</option>
           <option value="startsWith">Starts with</option>
@@ -39,8 +55,10 @@ export function ImportRulePanel({
       <label>
         <span>Match value</span>
         <input
-          onChange={(event) => onRuleDraftChange("value", event.target.value)}
-          value={ruleDraft.value}
+          onChange={(event) =>
+            updateLocalRuleDraft("value", event.target.value)
+          }
+          value={localRuleDraft.value}
         />
       </label>
       <label>
@@ -48,40 +66,48 @@ export function ImportRulePanel({
         <input
           list="category-suggestions"
           onChange={(event) =>
-            onRuleDraftChange("category", event.target.value)
+            updateLocalRuleDraft("category", event.target.value)
           }
-          value={ruleDraft.category}
+          value={localRuleDraft.category}
         />
       </label>
       <label>
         <span>Set tag</span>
         <input
-          onChange={(event) => onRuleDraftChange("tag", event.target.value)}
-          value={ruleDraft.tag}
+          onChange={(event) => updateLocalRuleDraft("tag", event.target.value)}
+          value={localRuleDraft.tag}
         />
       </label>
       <label>
         <span>Set merchant</span>
         <input
           onChange={(event) =>
-            onRuleDraftChange("merchant", event.target.value)
+            updateLocalRuleDraft("merchant", event.target.value)
           }
-          value={ruleDraft.merchant}
+          value={localRuleDraft.merchant}
         />
       </label>
       <label>
         <span>Set notes</span>
         <input
-          onChange={(event) => onRuleDraftChange("notes", event.target.value)}
-          value={ruleDraft.notes}
+          onChange={(event) =>
+            updateLocalRuleDraft("notes", event.target.value)
+          }
+          value={localRuleDraft.notes}
         />
       </label>
       <div className="rule-panel-actions">
         <span>{bulkRuleMatchCount} matches</span>
-        <Button variant="outline" onClick={onApplyDraftRule}>
+        <Button
+          variant="outline"
+          onClick={() => onApplyDraftRule(localRuleDraft)}
+        >
           Apply
         </Button>
-        <Button variant="secondary" onClick={onSaveDraftRule}>
+        <Button
+          variant="secondary"
+          onClick={() => onSaveDraftRule(localRuleDraft)}
+        >
           Save Rule
         </Button>
       </div>

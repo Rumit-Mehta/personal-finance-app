@@ -17,7 +17,6 @@ export function ImportPreviewSection({
   onImportAccountModeChange,
   onNewAccountDraftChange,
   onPreviewFieldChange,
-  onRuleDraftChange,
   onSaveDraftRule,
   onSaveImportPreview,
   onSelectedImportAccountChange,
@@ -50,7 +49,6 @@ export function ImportPreviewSection({
       <ImportRulePanel
         bulkRuleMatchCount={bulkRuleMatchCount}
         onApplyDraftRule={onApplyDraftRule}
-        onRuleDraftChange={onRuleDraftChange}
         onSaveDraftRule={onSaveDraftRule}
         ruleDraft={ruleDraft}
       />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { deriveDailyNetWorthSeries } from "@/data/balanceHistory";
 import {
@@ -39,6 +39,8 @@ export function useFinanceWorkspace() {
   const csvInputRef = useRef(null);
   const monzoJsonInputRef = useRef(null);
   const pfaInputRef = useRef(null);
+  const vaultPasswordInputRef = useRef(null);
+  const vaultPasswordRef = useRef("");
   const [parsedData, setParsedData] = useState(null);
   const [vaultData, setVaultData] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -55,7 +57,6 @@ export function useFinanceWorkspace() {
     notes: "",
   });
   const [ruleDraft, setRuleDraft] = useState(DEFAULT_RULE_DRAFT);
-  const [vaultPassword, setVaultPassword] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [theme, setTheme] = useState("light");
@@ -64,47 +65,90 @@ export function useFinanceWorkspace() {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
-  const accounts = parsedData ? [...parsedData.accounts.values()] : [];
-  const balanceSnapshots = parsedData
-    ? [...parsedData.balances].sort(compareBalanceSnapshotsDescending)
-    : [];
-  const importAccountOptions = accountOptionsFromParsedData(parsedData);
-  const accountNames = parsedData ? parsedData.accounts : new Map();
-  const transactions = parsedData
-    ? [...parsedData.transactions]
-        .sort(compareTransactionsNewestFirst)
-        .slice(0, 25)
-    : [];
-  const balanceSnapshotDraftWithDefaults = {
-    ...balanceSnapshotDraft,
-    accountId: balanceSnapshotDraft.accountId || firstActualAccountId(accounts),
-    date: balanceSnapshotDraft.date || todayDate(),
-  };
-  const netWorthSeries = parsedData
-    ? deriveDailyNetWorthSeries(currentVaultData())
-    : [];
-  const importPreviewAccountNames =
-    createImportPreviewAccountNames(importPreview);
-  const categorySuggestions = createCategorySuggestions(
-    parsedData,
-    importPreview,
-    importRules,
+  const currentFinanceData = useMemo(() => {
+    if (vaultData) {
+      return { ...vaultData, importRules };
+    }
+
+    if (parsedData) {
+      return {
+        ...financeDataFromAppData(parsedData),
+        importRules,
+      };
+    }
+
+    return null;
+  }, [importRules, parsedData, vaultData]);
+  const accounts = useMemo(
+    () => (parsedData ? [...parsedData.accounts.values()] : []),
+    [parsedData],
   );
-  const draftRule = importPreview
-    ? {
-        sourceType: importPreview.sourceType,
-        sourceProvider: importPreview.sourceProvider,
-        match: {
-          field: ruleDraft.field,
-          operator: ruleDraft.operator,
-          value: ruleDraft.value,
-        },
-        set: importRuleSetFromDraft(ruleDraft),
-      }
-    : null;
-  const bulkRuleMatchCount = draftRule
-    ? countImportRuleMatches(importPreview, draftRule)
-    : 0;
+  const balanceSnapshots = useMemo(
+    () =>
+      parsedData
+        ? [...parsedData.balances].sort(compareBalanceSnapshotsDescending)
+        : [],
+    [parsedData],
+  );
+  const importAccountOptions = useMemo(
+    () => accountOptionsFromParsedData(parsedData),
+    [parsedData],
+  );
+  const accountNames = useMemo(
+    () => (parsedData ? parsedData.accounts : new Map()),
+    [parsedData],
+  );
+  const transactions = useMemo(
+    () =>
+      parsedData
+        ? [...parsedData.transactions]
+            .sort(compareTransactionsNewestFirst)
+            .slice(0, 25)
+        : [],
+    [parsedData],
+  );
+  const balanceSnapshotDraftWithDefaults = useMemo(
+    () => ({
+      ...balanceSnapshotDraft,
+      accountId:
+        balanceSnapshotDraft.accountId || firstActualAccountId(accounts),
+      date: balanceSnapshotDraft.date || todayDate(),
+    }),
+    [accounts, balanceSnapshotDraft],
+  );
+  const netWorthSeries = useMemo(
+    () =>
+      currentFinanceData ? deriveDailyNetWorthSeries(currentFinanceData) : [],
+    [currentFinanceData],
+  );
+  const importPreviewAccountNames = useMemo(
+    () => createImportPreviewAccountNames(importPreview),
+    [importPreview],
+  );
+  const categorySuggestions = useMemo(
+    () => createCategorySuggestions(parsedData, importPreview, importRules),
+    [importPreview, importRules, parsedData],
+  );
+  const draftRule = useMemo(
+    () =>
+      importPreview
+        ? {
+            sourceType: importPreview.sourceType,
+            sourceProvider: importPreview.sourceProvider,
+            match: {
+              field: ruleDraft.field,
+              operator: ruleDraft.operator,
+              value: ruleDraft.value,
+            },
+            set: importRuleSetFromDraft(ruleDraft),
+          }
+        : null,
+    [importPreview, ruleDraft],
+  );
+  const bulkRuleMatchCount = useMemo(
+    () => (draftRule ? countImportRuleMatches(importPreview, draftRule) : 0),
+    [draftRule, importPreview],
+  );
 
   function handleThemeToggle() {
     setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
@@ -140,7 +184,7 @@ export function useFinanceWorkspace() {
     try {
       requireVaultPassword();
 
-      const nextVaultData = await openPfaVault(file, vaultPassword);
+      const nextVaultData = await openPfaVault(file, currentVaultPassword());
 
       setCurrentData(nextVaultData, "Opened encrypted PFA vault.");
       setImportPreview(null);
@@ -263,7 +307,7 @@ export function useFinanceWorkspace() {
       requireVaultPassword();
 
       const nextVaultData = currentVaultData();
-      const buffer = await createPfaVault(nextVaultData, vaultPassword);
+      const buffer = await createPfaVault(nextVaultData, currentVaultPassword());
 
       downloadArrayBuffer(
         buffer,
@@ -413,34 +457,31 @@ export function useFinanceWorkspace() {
     );
   }
 
-  function handleRuleDraftChange(field, value) {
-    setRuleDraft((currentDraft) => ({
-      ...currentDraft,
-      [field]: value,
-    }));
-  }
-
-  function handleApplyDraftRule() {
+  function handleApplyDraftRule(nextRuleDraft = ruleDraft) {
     try {
-      const rule = createRuleFromDraft();
+      const rule = createRuleFromDraft(nextRuleDraft);
+      const matchCount = countImportRuleMatches(importPreview, rule);
 
+      setRuleDraft(nextRuleDraft);
       setImportPreview((currentPreview) =>
         currentPreview
           ? applyRulesToImportBatch(currentPreview, [rule])
           : currentPreview,
       );
       setError("");
-      setMessage(`Applied rule to ${bulkRuleMatchCount} staged transactions.`);
+      setMessage(`Applied rule to ${matchCount} staged transactions.`);
     } catch (ruleError) {
       setError(ruleError.message);
       setMessage("");
     }
   }
 
-  function handleSaveDraftRule() {
+  function handleSaveDraftRule(nextRuleDraft = ruleDraft) {
     try {
-      const rule = createRuleFromDraft();
+      const rule = createRuleFromDraft(nextRuleDraft);
+      const matchCount = countImportRuleMatches(importPreview, rule);
 
+      setRuleDraft(nextRuleDraft);
       setImportRules((currentRules) => [
         ...currentRules,
         { ...rule, order: currentRules.length },
@@ -452,7 +493,7 @@ export function useFinanceWorkspace() {
       );
       setError("");
       setMessage(
-        `Saved reusable rule and applied it to ${bulkRuleMatchCount} staged transactions.`,
+        `Saved reusable rule and applied it to ${matchCount} staged transactions.`,
       );
     } catch (ruleError) {
       setError(ruleError.message);
@@ -460,14 +501,14 @@ export function useFinanceWorkspace() {
     }
   }
 
-  function createRuleFromDraft() {
+  function createRuleFromDraft(nextRuleDraft = ruleDraft) {
     if (!importPreview) {
       throw new Error("Import a CSV file before creating a rule.");
     }
 
-    const set = importRuleSetFromDraft(ruleDraft);
+    const set = importRuleSetFromDraft(nextRuleDraft);
 
-    if (!ruleDraft.field || !ruleDraft.value.trim()) {
+    if (!nextRuleDraft.field || !nextRuleDraft.value.trim()) {
       throw new Error("Choose a match field and value before applying a rule.");
     }
 
@@ -476,29 +517,22 @@ export function useFinanceWorkspace() {
     }
 
     return createImportRule({
-      name: `${ruleDraft.field} ${ruleDraft.operator} ${ruleDraft.value}`,
+      name: `${nextRuleDraft.field} ${nextRuleDraft.operator} ${nextRuleDraft.value}`,
       sourceType: importPreview.sourceType,
       sourceProvider: importPreview.sourceProvider,
       order: importRules.length,
       match: {
-        field: ruleDraft.field,
-        operator: ruleDraft.operator,
-        value: ruleDraft.value,
+        field: nextRuleDraft.field,
+        operator: nextRuleDraft.operator,
+        value: nextRuleDraft.value,
       },
       set,
     });
   }
 
   function currentVaultData() {
-    if (vaultData) {
-      return { ...vaultData, importRules };
-    }
-
-    if (parsedData) {
-      return {
-        ...financeDataFromAppData(parsedData),
-        importRules,
-      };
+    if (currentFinanceData) {
+      return currentFinanceData;
     }
 
     throw new Error("Load Excel, Monzo JSON, Monzo CSV, or a PFA vault first.");
@@ -546,9 +580,17 @@ export function useFinanceWorkspace() {
   }
 
   function requireVaultPassword() {
-    if (!vaultPassword) {
+    if (!currentVaultPassword()) {
       throw new Error("Enter a vault password first.");
     }
+  }
+
+  function currentVaultPassword() {
+    return vaultPasswordInputRef.current?.value ?? vaultPasswordRef.current;
+  }
+
+  function handleVaultPasswordChange(password) {
+    vaultPasswordRef.current = password;
   }
 
   function handleImportError(importError, duplicateMessage) {
@@ -582,7 +624,6 @@ export function useFinanceWorkspace() {
     handleNewAccountDraftChange,
     handlePfaFileChange,
     handlePreviewFieldChange,
-    handleRuleDraftChange,
     handleBalanceSnapshotDraftChange,
     handleSaveDraftRule,
     handleSaveBalanceSnapshot,
@@ -602,10 +643,10 @@ export function useFinanceWorkspace() {
     pfaInputRef,
     ruleDraft,
     selectedImportAccountId,
-    setVaultPassword,
+    handleVaultPasswordChange,
     theme,
     transactions,
-    vaultPassword,
+    vaultPasswordInputRef,
   };
 }
 

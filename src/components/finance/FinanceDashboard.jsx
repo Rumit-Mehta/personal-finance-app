@@ -28,10 +28,10 @@ export function FinanceDashboard({ profileName, workspace }) {
         onExcelFileChange={workspace.handleFileChange}
         onMonzoJsonChange={workspace.handleMonzoJsonChange}
         onPfaFileChange={workspace.handlePfaFileChange}
+        onVaultPasswordChange={workspace.handleVaultPasswordChange}
         parsedData={workspace.parsedData}
         pfaInputRef={workspace.pfaInputRef}
-        setVaultPassword={workspace.setVaultPassword}
-        vaultPassword={workspace.vaultPassword}
+        vaultPasswordInputRef={workspace.vaultPasswordInputRef}
       />
 
       <ChartsSection netWorthSeries={workspace.netWorthSeries} />
@@ -52,7 +52,6 @@ export function FinanceDashboard({ profileName, workspace }) {
           onImportAccountModeChange={workspace.handleImportAccountModeChange}
           onNewAccountDraftChange={workspace.handleNewAccountDraftChange}
           onPreviewFieldChange={workspace.handlePreviewFieldChange}
-          onRuleDraftChange={workspace.handleRuleDraftChange}
           onSaveDraftRule={workspace.handleSaveDraftRule}
           onSaveImportPreview={workspace.handleSaveImportPreview}
           onSelectedImportAccountChange={

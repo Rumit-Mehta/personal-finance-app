@@ -15,10 +15,10 @@ export function FileActions({
   onExcelFileChange,
   onMonzoJsonChange,
   onPfaFileChange,
+  onVaultPasswordChange,
   parsedData,
   pfaInputRef,
-  setVaultPassword,
-  vaultPassword,
+  vaultPasswordInputRef,
 }) {
   return (
     <>
@@ -63,9 +63,9 @@ export function FileActions({
         <span className="mb-1 block font-medium">Vault password</span>
         <input
           className="w-full rounded-md border border-border bg-background px-3 py-2"
-          onChange={(event) => setVaultPassword(event.target.value)}
+          onChange={(event) => onVaultPasswordChange(event.target.value)}
+          ref={vaultPasswordInputRef}
           type="password"
-          value={vaultPassword}
         />
       </label>
 

@@ -60,6 +60,7 @@ function FinanceLineChart({ data = [] }) {
             />
             <Line
               dataKey="netWorth"
+              isAnimationActive={false}
               type="monotone"
               stroke="var(--color-netWorth)"
               strokeWidth={2}
