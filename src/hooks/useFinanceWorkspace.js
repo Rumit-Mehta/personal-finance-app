@@ -70,7 +70,11 @@ export function useFinanceWorkspace() {
     : [];
   const importAccountOptions = accountOptionsFromParsedData(parsedData);
   const accountNames = parsedData ? parsedData.accounts : new Map();
-  const transactions = parsedData ? parsedData.transactions.slice(0, 25) : [];
+  const transactions = parsedData
+    ? [...parsedData.transactions]
+        .sort(compareTransactionsNewestFirst)
+        .slice(0, 25)
+    : [];
   const balanceSnapshotDraftWithDefaults = {
     ...balanceSnapshotDraft,
     accountId: balanceSnapshotDraft.accountId || firstActualAccountId(accounts),
@@ -626,5 +630,9 @@ function upsertById(items, nextItem) {
 }
 
 function compareBalanceSnapshotsDescending(left, right) {
+  return new Date(right.date).getTime() - new Date(left.date).getTime();
+}
+
+function compareTransactionsNewestFirst(left, right) {
   return new Date(right.date).getTime() - new Date(left.date).getTime();
 }
