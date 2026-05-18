@@ -1,5 +1,4 @@
 import ExcelJS from "exceljs";
-import { createSpreadsheetTemplateFileName } from "./createSpreadsheetTemplate.js";
 
 const SHEETS = {
   user: {
@@ -34,6 +33,20 @@ const SHEETS = {
       "notes",
     ],
   },
+  balances: {
+    name: "Balances",
+    columns: [
+      "balanceId",
+      "accountId",
+      "date",
+      "balance",
+      "currency",
+      "sourceType",
+      "sourceProvider",
+      "sourceId",
+      "notes",
+    ],
+  },
   tags: {
     name: "Tags",
     columns: ["tagId", "name", "description"],
@@ -60,6 +73,7 @@ const SHEETS = {
 };
 const MONEY_COLUMNS = new Set([
   "amount",
+  "balance",
   "openingBalance",
   "manualBalance",
   "currentValue",
@@ -77,6 +91,7 @@ export function createUpdatedSpreadsheet(data) {
   createWorksheet(workbook, SHEETS.user, createUserRows(data));
   createWorksheet(workbook, SHEETS.accounts, createAccountRows(data));
   createWorksheet(workbook, SHEETS.transactions, createTransactionRows(data));
+  createWorksheet(workbook, SHEETS.balances, createBalanceRows(data));
   createWorksheet(workbook, SHEETS.tags, createTagRows(data));
   createWorksheet(workbook, SHEETS.investments, createInvestmentRows(data));
   createWorksheet(workbook, SHEETS.valueHistory, createValueHistoryRows(data));
@@ -100,7 +115,7 @@ export async function downloadUpdatedSpreadsheet(data, name = "updated") {
   const link = document.createElement("a");
 
   link.href = url;
-  link.download = createSpreadsheetTemplateFileName(name);
+  link.download = createSpreadsheetFileName(name);
   link.click();
 
   URL.revokeObjectURL(url);
@@ -136,6 +151,26 @@ function createTransactionRows({ transactions } = {}) {
     transaction.merchant,
     transaction.notes,
   ]);
+}
+
+function createBalanceRows({ balances, rawRows } = {}) {
+  const balanceRows = toArray(balances);
+
+  if (balanceRows.length > 0) {
+    return balanceRows.map((balance) => [
+      balance.id,
+      balance.accountId,
+      formatDate(balance.date),
+      balance.balance,
+      balance.currency,
+      balance.sourceType,
+      balance.sourceProvider,
+      balance.sourceId,
+      balance.notes,
+    ]);
+  }
+
+  return rowsFromRaw(rawRows?.balances, SHEETS.balances.columns);
 }
 
 function createTagRows({ tags, rawRows } = {}) {
@@ -319,4 +354,18 @@ function formatDate(value) {
   }
 
   return String(value).slice(0, 10);
+}
+
+function createSpreadsheetFileName(name = "updated") {
+  const safeName = String(name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "")
+    .replace(/[-:T]/g, "");
+
+  return `pf-${safeName || "updated"}-${timestamp}.xlsx`;
 }

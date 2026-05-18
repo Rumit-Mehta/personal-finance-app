@@ -46,6 +46,9 @@ export function parseWorkbook(workbook) {
   const userRow = readSheetRows(workbook, "User")[0] ?? {};
   const accountRows = readSheetRows(workbook, "Accounts");
   const transactionRows = readSheetRows(workbook, "Transactions");
+  const balanceRows = workbook.getWorksheet("Balances")
+    ? readSheetRows(workbook, "Balances")
+    : [];
   const tagRows = readSheetRows(workbook, "Tags");
   const investmentRows = readSheetRows(workbook, "Investments");
   const debtRows = readSheetRows(workbook, "Debts");
@@ -53,6 +56,7 @@ export function parseWorkbook(workbook) {
     parseHistoryRow,
   );
   const accounts = createAccounts(accountRows);
+  const balances = createBalances(balanceRows, accounts);
   const transactions = createTransactions(transactionRows, accounts);
   const investments = createValueMap(
     investmentRows,
@@ -72,6 +76,7 @@ export function parseWorkbook(workbook) {
   return {
     user,
     accounts,
+    balances,
     transactions,
     tags: createTags(tagRows),
     investments,
@@ -80,6 +85,7 @@ export function parseWorkbook(workbook) {
     rawRows: {
       user: userRow,
       accounts: accountRows,
+      balances: balanceRows,
       transactions: transactionRows,
       tags: tagRows,
       investments: investmentRows,
@@ -87,6 +93,31 @@ export function parseWorkbook(workbook) {
       valueHistory,
     },
   };
+}
+
+function createBalances(balanceRows, accounts) {
+  return balanceRows.map((row) => {
+    const balanceId = requiredString(row.balanceId, "Balances.balanceId");
+    const accountId = requiredString(row.accountId, "Balances.accountId");
+
+    if (!accounts.has(accountId)) {
+      throw new Error(
+        `Balance snapshot ${balanceId} uses unknown account ${accountId}`,
+      );
+    }
+
+    return {
+      id: balanceId,
+      accountId,
+      date: dateValue(row.date),
+      balance: numberValue(row.balance),
+      currency: stringValue(row.currency) || "GBP",
+      sourceType: stringValue(row.sourceType),
+      sourceProvider: stringValue(row.sourceProvider),
+      sourceId: stringValue(row.sourceId),
+      notes: stringValue(row.notes),
+    };
+  });
 }
 
 function validateRequiredSheets(workbook) {

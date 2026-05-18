@@ -14,37 +14,34 @@ import {
 } from "@/components/ui/chart";
 
 const chartConfig = {
-  balance: {
-    label: "Balance",
+  netWorth: {
+    label: "Net worth",
     color: "var(--chart-1)",
   },
 };
 
-const defaultData = [
-  { month: "Jan", balance: 18400 },
-  { month: "Feb", balance: 19150 },
-  { month: "Mar", balance: 20300 },
-  { month: "Apr", balance: 19880 },
-  { month: "May", balance: 21450 },
-  { month: "Jun", balance: 22600 },
-];
-
-function FinanceLineChart({ data = defaultData }) {
+function FinanceLineChart({ data = [] }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Net worth trend</CardTitle>
-        <CardDescription>Balance movement over time</CardDescription>
+        <CardDescription>Daily end-of-day balance across accounts</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="min-h-[260px] w-full">
           <LineChart data={data}>
             <CartesianGrid vertical={false} />
             <XAxis
-              dataKey="month"
+              dataKey="date"
               tickLine={false}
               tickMargin={10}
               axisLine={false}
+              tickFormatter={(value) =>
+                new Date(value).toLocaleDateString("en-GB", {
+                  month: "short",
+                  day: "numeric",
+                })
+              }
             />
             <YAxis
               tickLine={false}
@@ -62,9 +59,10 @@ function FinanceLineChart({ data = defaultData }) {
               }
             />
             <Line
-              dataKey="balance"
+              dataKey="netWorth"
+              isAnimationActive={false}
               type="monotone"
-              stroke="var(--color-balance)"
+              stroke="var(--color-netWorth)"
               strokeWidth={2}
               dot={false}
             />

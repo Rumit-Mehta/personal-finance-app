@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -89,7 +90,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   margin: 0;
-  font-family: Arial, sans-serif;
+  font-family: "Chakra Petch", Arial, sans-serif;
   transition:
     background-color 160ms ease,
     color 160ms ease;
@@ -125,4 +126,118 @@ dt {
 
 dd {
   margin: 0 0 8px;
+}
+
+input,
+select {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font: inherit;
+  min-height: 36px;
+  padding: 6px 8px;
+}
+
+.status-message {
+  color: oklch(0.42 0.13 150);
+}
+
+.status-error {
+  color: var(--destructive);
+}
+
+.section-heading {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.section-heading p {
+  color: var(--muted-foreground);
+  margin-top: 4px;
+}
+
+.rule-panel {
+  align-items: end;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 16px 0;
+  padding: 16px;
+}
+
+.account-panel {
+  align-items: end;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin: 16px 0;
+  padding: 16px;
+}
+
+.balance-panel {
+  align-items: end;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin: 16px 0;
+  padding: 16px;
+}
+
+.rule-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.account-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.account-panel-wide {
+  grid-column: span 2;
+}
+
+.rule-panel span,
+.account-panel span,
+.saved-rules {
+  font-size: 0.875rem;
+}
+
+.rule-panel-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.saved-rules {
+  color: var(--muted-foreground);
+  margin: 12px 0;
+}
+
+.saved-rules h3 {
+  color: var(--foreground);
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+
+.saved-rules ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll input {
+  min-width: 140px;
+  width: 100%;
 }

@@ -1,3 +1,4 @@
 .env
 data/*.json
+data/*.pfa
 !data/.gitkeep
