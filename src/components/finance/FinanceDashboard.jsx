@@ -19,14 +19,10 @@ export function FinanceDashboard({ profileName, workspace }) {
       />
 
       <FileActions
-        csvInputRef={workspace.csvInputRef}
-        fileInputRef={workspace.fileInputRef}
-        monzoJsonInputRef={workspace.monzoJsonInputRef}
-        onCsvFileChange={workspace.handleCsvFileChange}
+        importInputRef={workspace.importInputRef}
         onDownloadExcel={workspace.handleDownloadExcel}
         onDownloadPfa={workspace.handleDownloadPfa}
-        onExcelFileChange={workspace.handleFileChange}
-        onMonzoJsonChange={workspace.handleMonzoJsonChange}
+        onImportFileChange={workspace.handleImportFileChange}
         onPfaFileChange={workspace.handlePfaFileChange}
         onVaultPasswordChange={workspace.handleVaultPasswordChange}
         parsedData={workspace.parsedData}

@@ -41,10 +41,54 @@ export function deriveDailyNetWorthSeries(financeData, options = {}) {
       roundMoney((totalsByDate.get(point.date) ?? 0) + point.balance),
     );
   });
+  deriveDailyInvestmentValues(data, options).forEach((point) => {
+    totalsByDate.set(
+      point.date,
+      roundMoney((totalsByDate.get(point.date) ?? 0) + point.value),
+    );
+  });
 
   return [...totalsByDate.entries()]
     .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
     .map(([date, netWorth]) => ({ date, netWorth }));
+}
+
+function deriveDailyInvestmentValues(financeData, options = {}) {
+  const data = normalizeFinanceData(financeData);
+  const range = dateRange(data, options);
+
+  if (!range) {
+    return [];
+  }
+
+  const historyByInvestment = groupBy(
+    data.valueHistory.filter(
+      (history) =>
+        history.entityType === "investment" &&
+        !history.entityId.startsWith("trading212:"),
+    ),
+    "entityId",
+  );
+  const totalsByDate = new Map();
+
+  historyByInvestment.forEach((historyRows) => {
+    const historyByDate = new Map(
+      historyRows
+        .map((history) => [dayKey(history.date), Number(history.value)])
+        .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate)),
+    );
+    let currentValue = 0;
+
+    forEachDate(range.startDate, range.endDate, (date) => {
+      if (historyByDate.has(date)) {
+        currentValue = historyByDate.get(date);
+      }
+
+      totalsByDate.set(date, roundMoney((totalsByDate.get(date) ?? 0) + currentValue));
+    });
+  });
+
+  return [...totalsByDate.entries()].map(([date, value]) => ({ date, value }));
 }
 
 function deriveAccountSeries({ account, transactions, snapshots, startDate, endDate }) {
@@ -84,6 +128,7 @@ function dateRange(data, options) {
   const allDates = [
     ...data.transactions.map((transaction) => dayKey(transaction.date)),
     ...data.balances.map((balance) => dayKey(balance.date)),
+    ...data.valueHistory.map((history) => dayKey(history.date)),
   ].filter(Boolean);
   const startDate = dayKey(options.startDate) || earliestDate(allDates);
   const endDate = dayKey(options.endDate) || latestDate(allDates);

@@ -1,6 +1,7 @@
 import { monzoCsvAdapter } from "./monzoCsv.js";
+import { trading212PdfAdapter } from "./trading212Pdf.js";
 
-const adapters = [monzoCsvAdapter];
+const adapters = [monzoCsvAdapter, trading212PdfAdapter];
 
 /**
  * Finds the first registered adapter that can handle a parsed CSV file.
@@ -23,4 +24,4 @@ export function listImportAdapters() {
   return [...adapters];
 }
 
-export { monzoCsvAdapter };
+export { monzoCsvAdapter, trading212PdfAdapter };

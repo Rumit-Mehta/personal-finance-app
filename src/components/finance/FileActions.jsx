@@ -1,21 +1,12 @@
-import {
-  downloadDummySpreadsheet,
-  downloadSpreadsheetTemplate,
-} from "@/data/createSpreadsheetTemplate";
-
 import { Button } from "@/components/ui/button";
 
 export function FileActions({
-  csvInputRef,
-  fileInputRef,
-  monzoJsonInputRef,
-  onCsvFileChange,
   onDownloadExcel,
   onDownloadPfa,
-  onExcelFileChange,
-  onMonzoJsonChange,
+  onImportFileChange,
   onPfaFileChange,
   onVaultPasswordChange,
+  importInputRef,
   parsedData,
   pfaInputRef,
   vaultPasswordInputRef,
@@ -23,26 +14,8 @@ export function FileActions({
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => downloadSpreadsheetTemplate("Rumit Mehta")}>
-          Download template
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => downloadDummySpreadsheet("Rumit Mehta Dummy")}
-        >
-          Download dummy spreadsheet
-        </Button>
-        <Button variant="outline" onClick={() => fileInputRef.current.click()}>
-          Upload Excel
-        </Button>
-        <Button variant="outline" onClick={() => csvInputRef.current.click()}>
-          Import CSV
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => monzoJsonInputRef.current.click()}
-        >
-          Import Monzo JSON
+        <Button variant="outline" onClick={() => importInputRef.current.click()}>
+          Import File
         </Button>
         <Button variant="outline" onClick={() => pfaInputRef.current.click()}>
           Open PFA
@@ -70,16 +43,9 @@ export function FileActions({
       </label>
 
       <input
-        accept=".xlsx"
-        onChange={onExcelFileChange}
-        ref={fileInputRef}
-        type="file"
-        hidden
-      />
-      <input
-        accept=".csv"
-        onChange={onCsvFileChange}
-        ref={csvInputRef}
+        accept=".xlsx,.csv,.pdf,.json"
+        onChange={onImportFileChange}
+        ref={importInputRef}
         type="file"
         hidden
       />
@@ -87,13 +53,6 @@ export function FileActions({
         accept=".pfa"
         onChange={onPfaFileChange}
         ref={pfaInputRef}
-        type="file"
-        hidden
-      />
-      <input
-        accept=".json"
-        onChange={onMonzoJsonChange}
-        ref={monzoJsonInputRef}
         type="file"
         hidden
       />

@@ -35,9 +35,7 @@ import {
 } from "@/utils/importPreview";
 
 export function useFinanceWorkspace() {
-  const fileInputRef = useRef(null);
-  const csvInputRef = useRef(null);
-  const monzoJsonInputRef = useRef(null);
+  const importInputRef = useRef(null);
   const pfaInputRef = useRef(null);
   const vaultPasswordInputRef = useRef(null);
   const vaultPasswordRef = useRef("");
@@ -154,7 +152,7 @@ export function useFinanceWorkspace() {
     setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
   }
 
-  async function handleFileChange(event) {
+  async function handleImportFileChange(event) {
     const file = event.target.files[0];
 
     if (!file) {
@@ -162,13 +160,58 @@ export function useFinanceWorkspace() {
     }
 
     try {
-      const nextVaultData = await excelFileToFinanceData(file);
+      if (isExcelImportFile(file)) {
+        const nextVaultData = await excelFileToFinanceData(file);
 
-      setCurrentData(nextVaultData, "Loaded Excel data into the vault model.");
-      setImportPreview(null);
+        setCurrentData(
+          nextVaultData,
+          "Loaded Excel data into the vault model.",
+        );
+        setImportPreview(null);
+        return;
+      }
+
+      if (isJsonImportFile(file)) {
+        const incomingVaultData = await monzoJsonFileToFinanceData(file);
+        const nextVaultData = vaultData
+          ? mergeFinanceData(
+              currentVaultData(),
+              incomingVaultData,
+              incomingVaultData.imports[0],
+            )
+          : incomingVaultData;
+
+        setCurrentData(
+          nextVaultData,
+          "Imported Monzo JSON into the vault model.",
+        );
+        setImportPreview(null);
+        return;
+      }
+
+      const editedBatch = await importFileToEditedBatch(file, importRules);
+
+      stageImportPreview(editedBatch);
     } catch (parseError) {
-      clearCurrentData();
-      setError(parseError.message);
+      if (isExcelImportFile(file)) {
+        clearCurrentData();
+        setError(parseError.message);
+        return;
+      }
+
+      if (isJsonImportFile(file)) {
+        handleImportError(
+          parseError,
+          "That Monzo JSON file has already been imported.",
+        );
+        return;
+      }
+
+      setImportPreview(null);
+      handleImportError(
+        parseError,
+        "That import file has already been imported.",
+      );
     } finally {
       event.target.value = "";
     }
@@ -196,73 +239,6 @@ export function useFinanceWorkspace() {
     }
   }
 
-  async function handleMonzoJsonChange(event) {
-    const file = event.target.files[0];
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      const incomingVaultData = await monzoJsonFileToFinanceData(file);
-      const nextVaultData = vaultData
-        ? mergeFinanceData(
-            currentVaultData(),
-            incomingVaultData,
-            incomingVaultData.imports[0],
-          )
-        : incomingVaultData;
-
-      setCurrentData(
-        nextVaultData,
-        "Imported Monzo JSON into the vault model.",
-      );
-    } catch (importError) {
-      handleImportError(
-        importError,
-        "That Monzo JSON file has already been imported.",
-      );
-    } finally {
-      event.target.value = "";
-    }
-  }
-
-  async function handleCsvFileChange(event) {
-    const file = event.target.files[0];
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      const editedBatch = await importFileToEditedBatch(file, importRules);
-      const suggestedAccount = defaultImportAccountFromBatch(editedBatch);
-      const existingAccounts = accountOptionsFromParsedData(parsedData);
-      const initialAccount = chooseInitialImportAccount(
-        existingAccounts,
-        suggestedAccount,
-      );
-      const initialMode = existingAccounts.length > 0 ? "existing" : "create";
-
-      setImportAccountMode(initialMode);
-      setSelectedImportAccountId(
-        initialMode === "existing" ? initialAccount.id : "",
-      );
-      setNewAccountDraft(suggestedAccount);
-      setImportPreview(assignImportBatchAccount(editedBatch, initialAccount));
-      setError("");
-      setMessage(
-        `Prepared ${editedBatch.rows.length} ${editedBatch.sourceProvider} CSV transactions for review.`,
-      );
-    } catch (importError) {
-      setImportPreview(null);
-      setError(importError.message);
-      setMessage("");
-    } finally {
-      event.target.value = "";
-    }
-  }
-
   async function handleSaveImportPreview() {
     if (!importPreview) {
       return;
@@ -271,7 +247,9 @@ export function useFinanceWorkspace() {
     try {
       const assignedPreview = assignImportBatchAccount(
         importPreview,
-        activeImportAccount(),
+        importPreview.allowAccountRetarget === false
+          ? null
+          : activeImportAccount(),
       );
       const incomingVaultData = financeDataFromEditedImport(assignedPreview, {
         importRules,
@@ -291,13 +269,13 @@ export function useFinanceWorkspace() {
 
       setCurrentData(
         nextVaultData,
-        "Saved edited CSV import into the vault model.",
+        "Saved edited import into the vault model.",
       );
       setImportPreview(null);
     } catch (importError) {
       handleImportError(
         importError,
-        "That CSV file has already been imported.",
+        "That import file has already been imported.",
       );
     }
   }
@@ -457,6 +435,27 @@ export function useFinanceWorkspace() {
     );
   }
 
+  function stageImportPreview(editedBatch) {
+    const suggestedAccount = defaultImportAccountFromBatch(editedBatch);
+    const existingAccounts = accountOptionsFromParsedData(parsedData);
+    const initialAccount = chooseInitialImportAccount(
+      existingAccounts,
+      suggestedAccount,
+    );
+    const initialMode = existingAccounts.length > 0 ? "existing" : "create";
+
+    setImportAccountMode(initialMode);
+    setSelectedImportAccountId(
+      initialMode === "existing" ? initialAccount.id : "",
+    );
+    setNewAccountDraft(suggestedAccount);
+    setImportPreview(assignImportBatchAccount(editedBatch, initialAccount));
+    setError("");
+    setMessage(
+      `Prepared ${editedBatch.rows.length} ${editedBatch.sourceProvider} import transactions for review.`,
+    );
+  }
+
   function handleApplyDraftRule(nextRuleDraft = ruleDraft) {
     try {
       const rule = createRuleFromDraft(nextRuleDraft);
@@ -503,7 +502,7 @@ export function useFinanceWorkspace() {
 
   function createRuleFromDraft(nextRuleDraft = ruleDraft) {
     if (!importPreview) {
-      throw new Error("Import a CSV file before creating a rule.");
+      throw new Error("Import a transaction file before creating a rule.");
     }
 
     const set = importRuleSetFromDraft(nextRuleDraft);
@@ -535,7 +534,7 @@ export function useFinanceWorkspace() {
       return currentFinanceData;
     }
 
-    throw new Error("Load Excel, Monzo JSON, Monzo CSV, or a PFA vault first.");
+    throw new Error("Load an import file or a PFA vault first.");
   }
 
   function activeImportAccount() {
@@ -611,16 +610,13 @@ export function useFinanceWorkspace() {
     balanceSnapshots,
     bulkRuleMatchCount,
     categorySuggestions,
-    csvInputRef,
+    currentFinanceData,
     error,
-    fileInputRef,
     handleApplyDraftRule,
-    handleCsvFileChange,
     handleDownloadExcel,
     handleDownloadPfa,
-    handleFileChange,
+    handleImportFileChange,
     handleImportAccountModeChange,
-    handleMonzoJsonChange,
     handleNewAccountDraftChange,
     handlePfaFileChange,
     handlePreviewFieldChange,
@@ -635,8 +631,8 @@ export function useFinanceWorkspace() {
     importPreview,
     importPreviewAccountNames,
     importRules,
+    importInputRef,
     message,
-    monzoJsonInputRef,
     newAccountDraft,
     netWorthSeries,
     parsedData,
@@ -676,4 +672,22 @@ function compareBalanceSnapshotsDescending(left, right) {
 
 function compareTransactionsNewestFirst(left, right) {
   return new Date(right.date).getTime() - new Date(left.date).getTime();
+}
+
+function isExcelImportFile(file = {}) {
+  return (
+    importFileName(file).endsWith(".xlsx") ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+}
+
+function isJsonImportFile(file = {}) {
+  return (
+    importFileName(file).endsWith(".json") || file.type === "application/json"
+  );
+}
+
+function importFileName(file = {}) {
+  return String(file.name ?? "").toLowerCase();
 }

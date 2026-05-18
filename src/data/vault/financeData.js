@@ -267,10 +267,12 @@ export function appDataFromFinanceData(financeData) {
     return model;
   });
   const investments = new Map(
-    data.investments.map((investment) => [
-      investment.id,
-      investment.currentValue,
-    ]),
+    data.investments
+      .filter((investment) => investment.provider !== "Trading 212")
+      .map((investment) => [
+        investment.id,
+        investment.currentValue,
+      ]),
   );
   const debts = new Map(data.debts.map((debt) => [debt.id, debt.currentValue]));
 

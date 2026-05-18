@@ -1,5 +1,4 @@
 import ExcelJS from "exceljs";
-import { createSpreadsheetTemplateFileName } from "./createSpreadsheetTemplate.js";
 
 const SHEETS = {
   user: {
@@ -116,7 +115,7 @@ export async function downloadUpdatedSpreadsheet(data, name = "updated") {
   const link = document.createElement("a");
 
   link.href = url;
-  link.download = createSpreadsheetTemplateFileName(name);
+  link.download = createSpreadsheetFileName(name);
   link.click();
 
   URL.revokeObjectURL(url);
@@ -355,4 +354,18 @@ function formatDate(value) {
   }
 
   return String(value).slice(0, 10);
+}
+
+function createSpreadsheetFileName(name = "updated") {
+  const safeName = String(name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "")
+    .replace(/[-:T]/g, "");
+
+  return `pf-${safeName || "updated"}-${timestamp}.xlsx`;
 }

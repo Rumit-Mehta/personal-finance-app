@@ -27,24 +27,29 @@ export function ImportPreviewSection({
     <section>
       <div className="section-heading">
         <div>
-          <h2>CSV Import Preview</h2>
+          <h2>Import Preview</h2>
           <p>
             {importPreview.rows.length} staged transactions from{" "}
             {importPreview.sourceProvider}.
+            {importPreview.investments?.length
+              ? ` ${importPreview.investments.length} investment positions staged.`
+              : ""}
           </p>
         </div>
         <Button onClick={onSaveImportPreview}>Save Import</Button>
       </div>
 
-      <ImportAccountPanel
-        importAccountMode={importAccountMode}
-        importAccountOptions={importAccountOptions}
-        newAccountDraft={newAccountDraft}
-        onImportAccountModeChange={onImportAccountModeChange}
-        onNewAccountDraftChange={onNewAccountDraftChange}
-        onSelectedImportAccountChange={onSelectedImportAccountChange}
-        selectedImportAccountId={selectedImportAccountId}
-      />
+      {importPreview.allowAccountRetarget !== false && (
+        <ImportAccountPanel
+          importAccountMode={importAccountMode}
+          importAccountOptions={importAccountOptions}
+          newAccountDraft={newAccountDraft}
+          onImportAccountModeChange={onImportAccountModeChange}
+          onNewAccountDraftChange={onNewAccountDraftChange}
+          onSelectedImportAccountChange={onSelectedImportAccountChange}
+          selectedImportAccountId={selectedImportAccountId}
+        />
+      )}
 
       <ImportRulePanel
         bulkRuleMatchCount={bulkRuleMatchCount}

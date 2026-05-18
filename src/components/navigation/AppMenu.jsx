@@ -1,7 +1,10 @@
+import { Database, LayoutDashboard, UserRound } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 
 export function AppMenu({
   activeView,
+  onData,
   onDashboard,
   onProfile,
   profile,
@@ -20,7 +23,18 @@ export function AppMenu({
           type="button"
           variant={activeView === "dashboard" ? "default" : "outline"}
         >
+          <LayoutDashboard />
           Dashboard
+        </Button>
+        <Button
+          aria-current={activeView === "data" ? "page" : undefined}
+          disabled={!profileComplete}
+          onClick={onData}
+          type="button"
+          variant={activeView === "data" ? "default" : "outline"}
+        >
+          <Database />
+          Data
         </Button>
         <Button
           aria-current={activeView === "profile" ? "page" : undefined}
@@ -28,6 +42,7 @@ export function AppMenu({
           type="button"
           variant={activeView === "profile" ? "default" : "outline"}
         >
+          <UserRound />
           Profile
         </Button>
       </div>

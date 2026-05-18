@@ -19,6 +19,7 @@ import {
   openPfaVault,
 } from "../src/data/vault/index.js";
 import { monzoJsonToFinanceData } from "../src/data/vault/adapters/monzo.js";
+import { normalizeTrading212Statement } from "../src/data/imports/adapters/trading212Pdf.js";
 
 if (!globalThis.crypto) {
   Object.defineProperty(globalThis, "crypto", {
@@ -424,6 +425,115 @@ test("PFA vault round trip preserves balance snapshots", async () => {
   assert.equal(opened.balances[0].notes, "Manual correction");
 });
 
+test("Trading 212 PDF adapter normalizes statement activity and snapshots", () => {
+  const stagedBatch = normalizeTrading212Statement(trading212RawBatch());
+
+  assert.equal(stagedBatch.sourceType, "trading212-pdf");
+  assert.equal(stagedBatch.allowAccountRetarget, false);
+  assert.equal(stagedBatch.accounts.length, 3);
+  assert.equal(stagedBatch.balances.length, 3);
+  assert.equal(stagedBatch.balances[0].balance, 4567.79);
+  assert.match(stagedBatch.balances[0].notes, /Cash balance: GBP 4537\.24/u);
+  assert.equal(stagedBatch.balances[1].balance, 50730.03);
+  assert.match(stagedBatch.balances[0].notes, /QMMFs:/u);
+  assert.equal(stagedBatch.rows.length, 5);
+  assert.equal(stagedBatch.rows[0].description, "Interest on cash");
+  assert.equal(stagedBatch.rows[0].amount, 0.5);
+  assert.equal(stagedBatch.rows[1].description, "Card purchase");
+  assert.equal(stagedBatch.rows[1].amount, -8);
+  assert.equal(stagedBatch.rows[2].description, "Buy 10 SGLN");
+  assert.equal(stagedBatch.rows[2].amount, -642.3);
+  assert.equal(stagedBatch.investments.length, 2);
+  assert.equal(stagedBatch.investments[0].id, "trading212:3266446:isin:IE00B4ND3602");
+  assert.equal(stagedBatch.investments[0].currentValue, 2116.5);
+  assert.equal(stagedBatch.valueHistory[0].date, "2026-01-31");
+});
+
+test("Trading 212 edited import persists investments and value history", () => {
+  const stagedBatch = normalizeTrading212Statement(trading212RawBatch());
+  const financeData = financeDataFromEditedImport(stagedBatch);
+  const appData = appDataFromFinanceData(financeData);
+
+  assert.equal(financeData.accounts.length, 3);
+  assert.equal(financeData.transactions.length, 5);
+  assert.equal(financeData.investments.length, 2);
+  assert.equal(financeData.valueHistory.length, 2);
+  assert.equal(financeData.imports[0].sourceType, "trading212-pdf");
+  assert.equal(financeData.imports[0].fileHash, "hash-212");
+  assert.equal(appData.user.netWorth, 55307.74);
+});
+
+test("PFA vault round trip preserves Trading 212 investment snapshots", async () => {
+  const financeData = financeDataFromEditedImport(
+    normalizeTrading212Statement(trading212RawBatch()),
+  );
+  const vault = await createPfaVault(financeData, "test-password");
+  const opened = await openPfaVault(vault, "test-password");
+
+  assert.equal(opened.investments.length, 2);
+  assert.equal(opened.valueHistory.length, 2);
+  assert.equal(opened.investments[0].provider, "Trading 212");
+});
+
+test("daily net worth includes investment value history", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "cash",
+        name: "Cash",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ],
+    balances: [
+      {
+        id: "cash:2026-01-31",
+        accountId: "cash",
+        date: "2026-01-31",
+        balance: 100,
+        currency: "GBP",
+      },
+    ],
+    transactions: [],
+    investments: [
+      {
+        id: "inv_1",
+        name: "ETF",
+        provider: "Trading 212",
+        currency: "GBP",
+        currentValue: 50,
+      },
+    ],
+    valueHistory: [
+      {
+        id: "hist_1",
+        entityType: "investment",
+        entityId: "inv_1",
+        date: "2026-01-31",
+        value: 50,
+      },
+    ],
+  });
+  const series = deriveDailyNetWorthSeries(financeData, {
+    startDate: "2026-01-31",
+    endDate: "2026-01-31",
+  });
+
+  assert.deepEqual(series, [{ date: "2026-01-31", netWorth: 150 }]);
+});
+
+test("daily net worth does not double count Trading 212 account-valued positions", () => {
+  const financeData = financeDataFromEditedImport(
+    normalizeTrading212Statement(trading212RawBatch()),
+  );
+  const series = deriveDailyNetWorthSeries(financeData, {
+    startDate: "2026-01-31",
+    endDate: "2026-01-31",
+  });
+
+  assert.deepEqual(series, [{ date: "2026-01-31", netWorth: 55307.74 }]);
+});
+
 function monzoCsvText() {
   return [
     "Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In",
@@ -454,5 +564,100 @@ function fileFromText(text, name = "monzo.csv") {
     text: async () => text,
     arrayBuffer: async () =>
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  };
+}
+
+function trading212RawBatch() {
+  const pages = [
+    [
+      "Trading 212 Invest",
+      "Account ID: 3104719",
+      "Monthly statement",
+      "Generated by Trading 212 UK Ltd. on 2 February 2026, covering from 31.12.2025 22:00 (UTC) to 31.01.2026 21:59 (UTC).",
+      "Overview",
+      "Trading 212 Stocks ISA Trading 212 Cash ISA",
+      "Account ID: 3266446 Account ID: 32376833",
+      "Trading 212 CFD",
+      "Account ID: 3305085",
+      "CUSTOMER ID",
+      "0000000",
+      "CUSTOMER NAME",
+      "Example User",
+      "Deposits £1,000.00",
+      "Withdrawals £-1,300.27",
+      "Dividends £0.00",
+      "Interest on cash £14.34",
+      "Cashback £15.00",
+      "FX Fee £-0.02",
+      "Third-party fees £0.00",
+      "Account value £4,567.79",
+      "Deposits £500.00",
+      "Withdrawals £0.00",
+      "Dividends £2.63",
+      "Interest on cash £22.68",
+      "FX Fee £-0.62",
+      "Third-party fees £-0.29",
+      "Account value £50,730.03",
+      "Deposits £0.00",
+      "Withdrawals £0.00",
+      "Interest paid £0.03",
+      "Account balance £9.92",
+    ].join("\n"),
+    [
+      "Invest account - cash breakdown",
+      "Total cash",
+      "GBP cash 4537.24",
+      "Settled cash in QMMFs",
+      "JPMorgan Liquidity Funds - GBP Liquidity LVNAV Fund LU1747646625 GBP 717.74 1 717.74",
+    ].join("\n"),
+    [
+      "Invest account - transactions and dividends",
+      "Transactions",
+      "TIME TYPE CURRENCY AMOUNT",
+      "2026-01-01 02:01:50 Interest on cash GBP 0.50",
+      "2026-01-07 14:36:21 Card purchase GBP -8.00",
+      "Dividends",
+      "INSTRUMENT ISIN",
+      "No data available",
+    ].join("\n"),
+    [
+      "Stocks ISA account - executed trades",
+      "EXECUTION TIME INSTRUMENT ISIN INSTRUMENT CURRENCY ORDER ID DIRECTION QUANTITY EXECUTION PRICE VALUE FX RATE FX FEE RETURN VALUE",
+      "2026-01-07 10:18:26 SGLN IE00B4ND3602 GBX 44550665211 Buy 10 6423 64230 100 0 0 642.30",
+    ].join("\n"),
+    [
+      "Stocks ISA account - open positions summary",
+      "INSTRUMENT ISIN INSTRUMENT CURRENCY QUANTITY AVERAGE PRICE PRICE RETURN VALUE FX RATE RETURN (GBP) VALUE (GBP)",
+      "SGLN IE00B4ND3602 GBX 30 6304.66666667 7055 22510 2116.50",
+      "AAPL US0378331005 USD 1.00673359 227.73651568 258.99 31.46 260.7339 1.36962 19.65 190.37",
+    ].join("\n"),
+    [
+      "Stocks ISA account - cash breakdown",
+      "Total cash",
+      "GBP cash 7177.08",
+    ].join("\n"),
+    [
+      "Cash ISA account - transactions",
+      "Transactions",
+      "TIME TYPE CURRENCY AMOUNT",
+      "2026-01-03 02:25:56 Interest on cash GBP 0.03",
+    ].join("\n"),
+    [
+      "Cash ISA account - cash breakdown",
+      "Total cash",
+      "GBP cash 9.92",
+    ].join("\n"),
+  ];
+
+  return {
+    adapterId: "trading212-pdf",
+    sourceType: "trading212-pdf",
+    sourceProvider: "trading212",
+    fileName: "Trading 212 Monthly Statement Jan 2026.pdf",
+    fileHash: "hash-212",
+    importedAt: "2026-02-02T12:00:00.000Z",
+    pageCount: pages.length,
+    pages,
+    statementText: pages.join("\n\n"),
   };
 }

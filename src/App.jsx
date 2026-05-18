@@ -2,6 +2,7 @@ import { FinanceDashboard } from "@/components/finance/FinanceDashboard";
 import { AppMenu } from "@/components/navigation/AppMenu";
 import { useFinanceWorkspace } from "@/hooks/useFinanceWorkspace";
 import { useLocalProfileSession } from "@/hooks/useLocalProfileSession";
+import { DataExplorerPage } from "@/pages/DataExplorerPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
     <main>
       <AppMenu
         activeView={profileSession.activeView}
+        onData={profileSession.openData}
         onDashboard={profileSession.openDashboard}
         onProfile={profileSession.openProfile}
         profile={profileSession.profile}
@@ -23,6 +25,12 @@ function App() {
           onSave={profileSession.saveProfile}
           profile={profileSession.profile}
           saveError={profileSession.storageError}
+        />
+      ) : profileSession.activeView === "data" ? (
+        <DataExplorerPage
+          financeData={workspace.currentFinanceData}
+          importPreview={workspace.importPreview}
+          onDashboard={profileSession.openDashboard}
         />
       ) : (
         <FinanceDashboard

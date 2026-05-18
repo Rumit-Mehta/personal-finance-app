@@ -25,6 +25,14 @@ export function useLocalProfileSession() {
     }));
   }
 
+  function openData() {
+    setStorageError("");
+    setSession((currentSession) => ({
+      ...currentSession,
+      activeView: profileComplete ? "data" : "profile",
+    }));
+  }
+
   function openProfile() {
     setStorageError("");
     setSession((currentSession) => ({
@@ -50,6 +58,7 @@ export function useLocalProfileSession() {
 
   return {
     activeView: session.activeView,
+    openData,
     openDashboard,
     openProfile,
     profile: session.profile,

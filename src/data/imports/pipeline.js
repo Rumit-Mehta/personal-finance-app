@@ -2,14 +2,33 @@ import { createImportRecord, normalizeFinanceData } from "../vault/financeData.j
 import { hashInput } from "../vault/hash.js";
 import { findImportAdapter, findImportAdapterById } from "./adapters/index.js";
 import { parseCsv } from "./csv.js";
+import { extractPdfText } from "./pdf.js";
 import { applyImportRules } from "./rules.js";
 
 /**
- * Reads an uploaded file, parses it as CSV, and wraps it in a raw import batch.
+ * Reads an uploaded file, parses it, and wraps it in a raw import batch.
  */
 export async function parseImportFile(file) {
   const importedAt = new Date().toISOString();
-  const [text, fileHash] = await Promise.all([file.text(), hashInput(file)]);
+  const fileHash = await hashInput(file);
+
+  if (isPdfFile(file)) {
+    const parsedPdf = await extractPdfText(file);
+    const adapter = findImportAdapter(parsedPdf);
+
+    if (!adapter) {
+      throw new Error("Unsupported PDF format. No adapter matched this file.");
+    }
+
+    return adapter.createRawBatch({
+      parsedPdf,
+      file,
+      fileHash,
+      importedAt,
+    });
+  }
+
+  const text = await file.text();
   const parsedCsv = parseCsv(text);
   const adapter = findImportAdapter(parsedCsv);
 
@@ -49,6 +68,10 @@ export function applyRulesToImportBatch(stagedBatch, rules = []) {
  * Assigns user-selected main-account details while preserving generated child rows.
  */
 export function assignImportBatchAccount(batch, account) {
+  if (batch.allowAccountRetarget === false) {
+    return batch;
+  }
+
   const normalizedAccount = {
     ...importAccount(account),
     accountRole: "main",
@@ -114,9 +137,9 @@ export function financeDataFromEditedImport(editedBatch, options = {}) {
     balances: (editedBatch.balances ?? []).map(importBalanceSnapshot),
     transactions: editedBatch.rows.map(importRowToTransaction),
     tags: [],
-    investments: [],
+    investments: (editedBatch.investments ?? []).map(importValueEntity),
     debts: [],
-    valueHistory: [],
+    valueHistory: (editedBatch.valueHistory ?? []).map(importValueHistory),
     imports: [importRecord],
     importRules: options.importRules ?? [],
   });
@@ -170,6 +193,33 @@ function importRowToTransaction(row) {
 }
 
 /**
+ * Maps staged investment/debt-like rows into the current vault value entity shape.
+ */
+function importValueEntity(entity = {}) {
+  return {
+    id: text(entity.id),
+    name: text(entity.name),
+    type: text(entity.type),
+    provider: text(entity.provider),
+    currency: text(entity.currency) || "GBP",
+    currentValue: number(entity.currentValue),
+  };
+}
+
+/**
+ * Maps staged value history rows into the vault shape.
+ */
+function importValueHistory(history = {}) {
+  return {
+    id: text(history.id),
+    entityType: text(history.entityType),
+    entityId: text(history.entityId),
+    date: text(history.date),
+    value: number(history.value),
+  };
+}
+
+/**
  * Normalizes account-like objects from the UI or adapters before vault conversion.
  */
 function importAccount(account = {}) {
@@ -210,4 +260,11 @@ function number(value) {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isPdfFile(file = {}) {
+  const name = text(file.name).toLowerCase();
+  const type = text(file.type).toLowerCase();
+
+  return type === "application/pdf" || name.endsWith(".pdf");
 }
