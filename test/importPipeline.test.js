@@ -298,6 +298,43 @@ test("manual balance snapshots override bank snapshots on the same day", async (
   assert.equal(series[0].netWorth, 120);
 });
 
+test("account activity is derived from the current balance", () => {
+  const appData = appDataFromFinanceData({
+    accounts: [
+      {
+        id: "active_account",
+        name: "Active Account",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 25,
+      },
+      {
+        id: "inactive_account",
+        name: "Inactive Account",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 25,
+      },
+    ],
+    balances: [
+      {
+        id: "inactive_account:balance",
+        accountId: "inactive_account",
+        date: "2026-01-31",
+        balance: 0,
+        currency: "GBP",
+        sourceType: "manual",
+      },
+    ],
+  });
+
+  assert.equal(appData.accounts.get("active_account").isActive, true);
+  assert.equal(appData.accounts.get("active_account").isInactive, false);
+  assert.equal(appData.accounts.get("inactive_account").balance, 0);
+  assert.equal(appData.accounts.get("inactive_account").isActive, false);
+  assert.equal(appData.accounts.get("inactive_account").isInactive, true);
+});
+
 test("daily net worth anchors forward from manual balance corrections", () => {
   const financeData = normalizeFinanceData({
     accounts: [

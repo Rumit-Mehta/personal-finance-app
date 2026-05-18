@@ -60,6 +60,14 @@ export class Account {
     return !this.isVirtual;
   }
 
+  get isActive() {
+    return Number(this.balance) !== 0;
+  }
+
+  get isInactive() {
+    return !this.isActive;
+  }
+
   get hasManualBalance() {
     return this.manualBalance !== null;
   }
