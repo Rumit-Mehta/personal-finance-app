@@ -9,7 +9,10 @@ import {
   normalizeImportBatch,
   parseImportFile,
 } from "../src/data/imports/index.js";
-import { deriveDailyNetWorthSeries } from "../src/data/balanceHistory.js";
+import {
+  deriveDailyAccountNetWorthStackSeries,
+  deriveDailyNetWorthSeries,
+} from "../src/data/balanceHistory.js";
 import { parseCsv } from "../src/data/imports/csv.js";
 import {
   appDataFromFinanceData,
@@ -315,6 +318,13 @@ test("account activity is derived from the current balance", () => {
         currency: "GBP",
         openingBalance: 25,
       },
+      {
+        id: "rounded_zero_account",
+        name: "Rounded Zero Account",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 0.1 + 0.2 - 0.3,
+      },
     ],
     balances: [
       {
@@ -333,6 +343,9 @@ test("account activity is derived from the current balance", () => {
   assert.equal(appData.accounts.get("inactive_account").balance, 0);
   assert.equal(appData.accounts.get("inactive_account").isActive, false);
   assert.equal(appData.accounts.get("inactive_account").isInactive, true);
+  assert.equal(appData.accounts.get("rounded_zero_account").balance > 0, true);
+  assert.equal(appData.accounts.get("rounded_zero_account").isActive, false);
+  assert.equal(appData.accounts.get("rounded_zero_account").isInactive, true);
 });
 
 test("daily net worth anchors forward from manual balance corrections", () => {
@@ -408,6 +421,208 @@ test("daily net worth anchors forward from manual balance corrections", () => {
     { date: "2026-01-02", netWorth: 150 },
     { date: "2026-01-03", netWorth: 150 },
   ]);
+});
+
+test("daily account net worth stack keeps accounts separate with institution metadata", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "acc_current",
+        name: "Current",
+        institution: "Monzo",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 100,
+      },
+      {
+        id: "acc_pot",
+        name: "Holiday Pot",
+        institution: "Monzo",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 20,
+      },
+      {
+        id: "budget",
+        name: "Budget envelope",
+        institution: "Planning",
+        accountKind: "virtual",
+        currency: "GBP",
+        openingBalance: 999,
+      },
+    ],
+    transactions: [
+      {
+        id: "txn_current",
+        account: "acc_current",
+        date: "2026-01-02",
+        amount: -25,
+      },
+      {
+        id: "txn_pot",
+        account: "acc_pot",
+        date: "2026-01-02",
+        amount: 5,
+      },
+      {
+        id: "txn_virtual",
+        account: "budget",
+        date: "2026-01-02",
+        amount: 1000,
+      },
+    ],
+    balances: [
+      createManualBalanceSnapshot({
+        accountId: "acc_current",
+        date: "2026-01-02",
+        balance: 60,
+        currency: "GBP",
+      }),
+    ],
+  });
+  const stack = deriveDailyAccountNetWorthStackSeries(financeData, {
+    startDate: "2026-01-01",
+    endDate: "2026-01-02",
+  });
+
+  assert.deepEqual(stack.keys, ["account:acc_current", "account:acc_pot"]);
+  assert.equal(stack.seriesMeta["account:acc_current"].label, "Current");
+  assert.equal(stack.seriesMeta["account:acc_current"].group, "Monzo");
+  assert.equal(stack.seriesMeta["account:acc_pot"].group, "Monzo");
+  assert.match(stack.seriesMeta["account:acc_current"].color, /^hsl\(\d+ 72% 40%\)$/u);
+  assert.match(stack.seriesMeta["account:acc_pot"].color, /^hsl\(\d+ 72% 48%\)$/u);
+  assert.equal(stack.data[0]["account:acc_current"], 100);
+  assert.equal(stack.data[0]["account:acc_pot"], 20);
+  assert.equal(stack.data[0].values["account:acc_current"], 100);
+  assert.equal(stack.data[0].total, 120);
+  assert.equal(stack.data[1]["account:acc_current"], 60);
+  assert.equal(stack.data[1]["account:acc_pot"], 25);
+  assert.equal(stack.data[1].total, 85);
+});
+
+test("daily account net worth stack includes investment providers without Trading 212 double counting", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "cash",
+        name: "Cash",
+        institution: "Bank",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ],
+    balances: [
+      {
+        id: "cash:2026-01-31",
+        accountId: "cash",
+        date: "2026-01-31",
+        balance: 100,
+        currency: "GBP",
+      },
+    ],
+    investments: [
+      {
+        id: "inv_1",
+        name: "ETF",
+        provider: "Vanguard",
+        currency: "GBP",
+        currentValue: 50,
+      },
+      {
+        id: "inv_2",
+        name: "Bond",
+        provider: "Vanguard",
+        currency: "GBP",
+        currentValue: 25,
+      },
+      {
+        id: "trading212:position",
+        name: "Trading 212 position",
+        provider: "Trading 212",
+        currency: "GBP",
+        currentValue: 999,
+      },
+    ],
+    valueHistory: [
+      {
+        id: "hist_1",
+        entityType: "investment",
+        entityId: "inv_1",
+        date: "2026-01-31",
+        value: 50,
+      },
+      {
+        id: "hist_2",
+        entityType: "investment",
+        entityId: "inv_2",
+        date: "2026-01-31",
+        value: 25,
+      },
+      {
+        id: "hist_3",
+        entityType: "investment",
+        entityId: "trading212:position",
+        date: "2026-01-31",
+        value: 999,
+      },
+    ],
+  });
+  const stack = deriveDailyAccountNetWorthStackSeries(financeData, {
+    startDate: "2026-01-31",
+    endDate: "2026-01-31",
+  });
+
+  assert.deepEqual(stack.keys, ["account:cash", "investment:Vanguard"]);
+  assert.equal(stack.seriesMeta["investment:Vanguard"].label, "Vanguard investments");
+  assert.equal(stack.data[0]["investment:Vanguard"], 75);
+  assert.equal(stack.data[0].total, 175);
+  assert.equal(stack.seriesMeta["investment:Trading 212"], undefined);
+});
+
+test("daily account net worth stack preserves negative account totals", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "savings",
+        name: "Savings",
+        institution: "Bank",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+      {
+        id: "overdraft",
+        name: "Overdraft",
+        institution: "Bank",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ],
+    balances: [
+      {
+        id: "savings:2026-01-31",
+        accountId: "savings",
+        date: "2026-01-31",
+        balance: 100,
+        currency: "GBP",
+      },
+      {
+        id: "overdraft:2026-01-31",
+        accountId: "overdraft",
+        date: "2026-01-31",
+        balance: -50,
+        currency: "GBP",
+      },
+    ],
+  });
+  const stack = deriveDailyAccountNetWorthStackSeries(financeData, {
+    startDate: "2026-01-31",
+    endDate: "2026-01-31",
+  });
+
+  assert.equal(stack.data[0].positiveTotal, 100);
+  assert.equal(stack.data[0].negativeTotal, -50);
+  assert.equal(stack.data[0].total, 50);
+  assert.equal(stack.data[0]["account:overdraft"], -50);
 });
 
 test("PFA vault round trip preserves importRules", async () => {
