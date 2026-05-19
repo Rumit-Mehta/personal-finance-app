@@ -30,7 +30,9 @@ export function FinanceDashboard({ profileName, workspace }) {
         vaultPasswordInputRef={workspace.vaultPasswordInputRef}
       />
 
-      <ChartsSection netWorthSeries={workspace.netWorthSeries} />
+      <ChartsSection
+        accountNetWorthStackSeries={workspace.accountNetWorthStackSeries}
+      />
 
       <StatusMessages error={workspace.error} message={workspace.message} />
 
