@@ -1,6 +1,7 @@
 export {
   applyRulesToImportBatch,
   assignImportBatchAccount,
+  combineImportBatches,
   financeDataFromEditedImport,
   importFileToEditedBatch,
   normalizeImportBatch,

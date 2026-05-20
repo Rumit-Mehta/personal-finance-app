@@ -4,6 +4,7 @@ import { deriveDailyNetWorthSeries } from "@/data/balanceHistory";
 import {
   applyRulesToImportBatch,
   assignImportBatchAccount,
+  combineImportBatches,
   countImportRuleMatches,
   createImportRule,
   financeDataFromEditedImport,
@@ -12,10 +13,12 @@ import {
 import { downloadUpdatedSpreadsheet } from "@/data/updateSpreadsheet";
 import {
   appDataFromFinanceData,
+  createEmptyFinanceData,
   createManualBalanceSnapshot,
   createPfaVault,
   DuplicateImportError,
   financeDataFromAppData,
+  isDuplicateImport,
   mergeFinanceData,
   openPfaVault,
 } from "@/data/vault";
@@ -153,53 +156,27 @@ export function useFinanceWorkspace() {
   }
 
   async function handleImportFileChange(event) {
-    const file = event.target.files[0];
+    const files = [...(event.target.files ?? [])];
 
-    if (!file) {
+    if (files.length === 0) {
       return;
     }
 
     try {
-      if (isExcelImportFile(file)) {
-        const nextVaultData = await excelFileToFinanceData(file);
-
-        setCurrentData(
-          nextVaultData,
-          "Loaded Excel data into the vault model.",
-        );
-        setImportPreview(null);
+      if (files.length === 1) {
+        await importSingleFile(files[0]);
         return;
       }
 
-      if (isJsonImportFile(file)) {
-        const incomingVaultData = await monzoJsonFileToFinanceData(file);
-        const nextVaultData = vaultData
-          ? mergeFinanceData(
-              currentVaultData(),
-              incomingVaultData,
-              incomingVaultData.imports[0],
-            )
-          : incomingVaultData;
-
-        setCurrentData(
-          nextVaultData,
-          "Imported Monzo JSON into the vault model.",
-        );
-        setImportPreview(null);
-        return;
-      }
-
-      const editedBatch = await importFileToEditedBatch(file, importRules);
-
-      stageImportPreview(editedBatch);
+      await importMultipleFiles(files);
     } catch (parseError) {
-      if (isExcelImportFile(file)) {
+      if (files.length === 1 && isExcelImportFile(files[0])) {
         clearCurrentData();
         setError(parseError.message);
         return;
       }
 
-      if (isJsonImportFile(file)) {
+      if (files.length === 1 && isJsonImportFile(files[0])) {
         handleImportError(
           parseError,
           "That Monzo JSON file has already been imported.",
@@ -215,6 +192,84 @@ export function useFinanceWorkspace() {
     } finally {
       event.target.value = "";
     }
+  }
+
+  async function importSingleFile(file) {
+    if (isExcelImportFile(file)) {
+      const nextVaultData = await excelFileToFinanceData(file);
+
+      setCurrentData(
+        nextVaultData,
+        "Loaded Excel data into the vault model.",
+      );
+      setImportPreview(null);
+      return;
+    }
+
+    if (isJsonImportFile(file)) {
+      const incomingVaultData = await monzoJsonFileToFinanceData(file);
+      const nextVaultData = vaultData
+        ? mergeFinanceData(currentVaultData(), incomingVaultData)
+        : incomingVaultData;
+
+      setCurrentData(
+        nextVaultData,
+        "Imported Monzo JSON into the vault model.",
+      );
+      setImportPreview(null);
+      return;
+    }
+
+    const editedBatch = await importFileToEditedBatch(file, importRules);
+
+    stageImportPreview(editedBatch);
+  }
+
+  async function importMultipleFiles(files) {
+    const directFiles = files.filter(isDirectFinanceImportFile);
+    const stagedFiles = files.filter((file) => !isDirectFinanceImportFile(file));
+
+    if (directFiles.length > 0 && stagedFiles.length > 0) {
+      throw new Error(
+        "Choose either Excel/JSON files or CSV/PDF files in one bulk import.",
+      );
+    }
+
+    if (directFiles.length > 0) {
+      const incomingFiles = await Promise.all(
+        directFiles.map((file) =>
+          isExcelImportFile(file)
+            ? excelFileToFinanceData(file)
+            : monzoJsonFileToFinanceData(file),
+        ),
+      );
+      const { importedCount, nextVaultData, skippedDuplicateCount } =
+        mergeIncomingFinanceFiles(incomingFiles);
+
+      setImportPreview(null);
+      setCurrentData(
+        nextVaultData,
+        createBulkImportMessage(importedCount, skippedDuplicateCount),
+      );
+      return;
+    }
+
+    const editedBatches = await Promise.all(
+      stagedFiles.map((file) => importFileToEditedBatch(file, importRules)),
+    );
+    const { importableBatches, skippedDuplicateCount } =
+      filterDuplicateImportBatches(editedBatches);
+
+    if (importableBatches.length === 0) {
+      setImportPreview(null);
+      setError("");
+      setMessage(createBulkImportMessage(0, skippedDuplicateCount));
+      return;
+    }
+
+    stageImportPreview(combineImportBatches(importableBatches), {
+      skippedDuplicateCount,
+    });
   }
 
   async function handlePfaFileChange(event) {
@@ -259,17 +314,17 @@ export function useFinanceWorkspace() {
         : parsedData
           ? financeDataFromAppData(parsedData)
           : null;
-      const nextVaultData = existingVaultData
-        ? mergeFinanceData(
-            { ...existingVaultData, importRules },
-            incomingVaultData,
-            incomingVaultData.imports[0],
-          )
-        : incomingVaultData;
+      const baseVaultData = existingVaultData
+        ? { ...existingVaultData, importRules }
+        : createEmptyFinanceData({
+            metadata: incomingVaultData.metadata,
+            importRules,
+          });
+      const nextVaultData = mergeFinanceData(baseVaultData, incomingVaultData);
 
       setCurrentData(
         nextVaultData,
-        "Saved edited import into the vault model.",
+        createSavedImportMessage(incomingVaultData.imports.length),
       );
       setImportPreview(null);
     } catch (importError) {
@@ -435,7 +490,7 @@ export function useFinanceWorkspace() {
     );
   }
 
-  function stageImportPreview(editedBatch) {
+  function stageImportPreview(editedBatch, options = {}) {
     const suggestedAccount = defaultImportAccountFromBatch(editedBatch);
     const existingAccounts = accountOptionsFromParsedData(parsedData);
     const initialAccount = chooseInitialImportAccount(
@@ -452,8 +507,81 @@ export function useFinanceWorkspace() {
     setImportPreview(assignImportBatchAccount(editedBatch, initialAccount));
     setError("");
     setMessage(
-      `Prepared ${editedBatch.rows.length} ${editedBatch.sourceProvider} import transactions for review.`,
+      createPreparedImportMessage(editedBatch, options.skippedDuplicateCount),
     );
+  }
+
+  function mergeIncomingFinanceFiles(incomingFiles) {
+    let nextVaultData = currentFinanceData
+      ? { ...currentVaultData(), importRules }
+      : createEmptyFinanceData({ importRules });
+    const importedFileHashes = new Set(
+      nextVaultData.imports
+        .map((importRecord) => importRecord.fileHash)
+        .filter(Boolean),
+    );
+    let importedCount = 0;
+    let skippedDuplicateCount = 0;
+
+    incomingFiles.forEach((incomingFile) => {
+      const fileHashes = incomingFile.imports
+        .map((importRecord) => importRecord.fileHash)
+        .filter(Boolean);
+      const hasDuplicate = incomingFile.imports.some(
+        (importRecord) =>
+          isDuplicateImport(nextVaultData, importRecord) ||
+          importedFileHashes.has(importRecord.fileHash),
+      );
+
+      if (hasDuplicate) {
+        skippedDuplicateCount += 1;
+        return;
+      }
+
+      nextVaultData = mergeFinanceData(nextVaultData, {
+        ...incomingFile,
+        importRules,
+      });
+      importedCount += 1;
+      fileHashes.forEach((fileHash) => importedFileHashes.add(fileHash));
+    });
+
+    return { importedCount, nextVaultData, skippedDuplicateCount };
+  }
+
+  function filterDuplicateImportBatches(editedBatches) {
+    const baseVaultData = currentFinanceData ?? createEmptyFinanceData();
+    const importedFileHashes = new Set(
+      baseVaultData.imports
+        .map((importRecord) => importRecord.fileHash)
+        .filter(Boolean),
+    );
+    const importableBatches = [];
+    let skippedDuplicateCount = 0;
+
+    editedBatches.forEach((editedBatch) => {
+      const importSources = importSourcesFromEditedBatch(editedBatch);
+      const hasDuplicate = importSources.some(
+        (importSource) =>
+          importSource.fileHash &&
+          (importedFileHashes.has(importSource.fileHash) ||
+            isDuplicateImport(baseVaultData, importSource)),
+      );
+
+      if (hasDuplicate) {
+        skippedDuplicateCount += 1;
+        return;
+      }
+
+      importableBatches.push(editedBatch);
+      importSources.forEach((importSource) => {
+        if (importSource.fileHash) {
+          importedFileHashes.add(importSource.fileHash);
+        }
+      });
+    });
+
+    return { importableBatches, skippedDuplicateCount };
   }
 
   function handleApplyDraftRule(nextRuleDraft = ruleDraft) {
@@ -686,6 +814,93 @@ function isJsonImportFile(file = {}) {
   return (
     importFileName(file).endsWith(".json") || file.type === "application/json"
   );
+}
+
+function isDirectFinanceImportFile(file = {}) {
+  return isExcelImportFile(file) || isJsonImportFile(file);
+}
+
+function importSourcesFromEditedBatch(batch) {
+  if (Array.isArray(batch.importSources) && batch.importSources.length > 0) {
+    return batch.importSources;
+  }
+
+  return [
+    {
+      sourceType: batch.sourceType,
+      sourceProvider: batch.sourceProvider,
+      fileHash: batch.fileHash,
+      fileName: batch.fileName,
+      transactionCount: batch.rows?.length ?? 0,
+      importedAt: batch.importedAt,
+    },
+  ];
+}
+
+function createPreparedImportMessage(batch, skippedDuplicateCount = 0) {
+  const fileCount = batch.sourceFileCount ?? batch.importSources?.length ?? 1;
+  const source = batch.sourceProvider || "file";
+  const fileSummary =
+    fileCount > 1 ? ` from ${fileCount} ${pluralize(fileCount, "file")}` : "";
+  const investmentSummary = batch.investments?.length
+    ? ` ${batch.investments.length} ${pluralize(
+        batch.investments.length,
+        "investment position",
+      )} staged.`
+    : "";
+
+  return [
+    `Prepared ${batch.rows.length} ${source} import ${pluralize(
+      batch.rows.length,
+      "transaction",
+    )}${fileSummary} for review.`,
+    investmentSummary.trim(),
+    skippedDuplicateSummary(skippedDuplicateCount),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function createSavedImportMessage(importCount) {
+  if (importCount <= 1) {
+    return "Saved edited import into the vault model.";
+  }
+
+  return `Saved edited imports from ${importCount} ${pluralize(
+    importCount,
+    "file",
+  )} into the vault model.`;
+}
+
+function createBulkImportMessage(importedCount, skippedDuplicateCount = 0) {
+  if (importedCount === 0) {
+    return `No new files imported.${prefixedDuplicateSummary(
+      skippedDuplicateCount,
+    )}`;
+  }
+
+  return `Imported ${importedCount} ${pluralize(
+    importedCount,
+    "file",
+  )} into the vault model.${prefixedDuplicateSummary(skippedDuplicateCount)}`;
+}
+
+function skippedDuplicateSummary(count) {
+  if (count <= 0) {
+    return "";
+  }
+
+  return `Skipped ${count} duplicate ${pluralize(count, "file")}.`;
+}
+
+function prefixedDuplicateSummary(count) {
+  const summary = skippedDuplicateSummary(count);
+
+  return summary ? ` ${summary}` : "";
+}
+
+function pluralize(count, singular, plural = `${singular}s`) {
+  return count === 1 ? singular : plural;
 }
 
 function importFileName(file = {}) {

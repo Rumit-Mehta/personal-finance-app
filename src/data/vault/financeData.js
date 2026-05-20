@@ -310,9 +310,15 @@ export function mergeFinanceData(existingData, incomingData, importRecord) {
   const normalizedImport = importRecord
     ? normalizeImportRecord(importRecord)
     : incoming.imports[0];
+  const importsToCheck = importRecord
+    ? [normalizedImport]
+    : incoming.imports.map(normalizeImportRecord);
+  const duplicateImport = importsToCheck.find((currentImport) =>
+    isDuplicateImport(existing, currentImport),
+  );
 
-  if (normalizedImport && isDuplicateImport(existing, normalizedImport)) {
-    throw new DuplicateImportError(normalizedImport);
+  if (duplicateImport) {
+    throw new DuplicateImportError(duplicateImport);
   }
 
   const now = new Date().toISOString();
@@ -335,7 +341,7 @@ export function mergeFinanceData(existingData, incomingData, importRecord) {
     ),
     imports: mergeImports(
       existing.imports,
-      normalizedImport ? [...incoming.imports, normalizedImport] : incoming.imports,
+      importRecord ? [...incoming.imports, normalizedImport] : incoming.imports,
     ),
     importRules: mergeById(existing.importRules, incoming.importRules),
   });

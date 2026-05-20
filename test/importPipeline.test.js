@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   applyImportRules,
   assignImportBatchAccount,
+  combineImportBatches,
   createImportRule,
   financeDataFromEditedImport,
   normalizeImportBatch,
@@ -15,6 +16,8 @@ import {
   appDataFromFinanceData,
   createManualBalanceSnapshot,
   createPfaVault,
+  DuplicateImportError,
+  mergeFinanceData,
   normalizeFinanceData,
   openPfaVault,
 } from "../src/data/vault/index.js";
@@ -173,6 +176,77 @@ test("assignImportBatchAccount supports a newly created account", async () => {
 
   assert.equal(financeData.accounts[0].name, "Monzo Personal");
   assert.equal(financeData.transactions[0].account, "monzo:personal");
+});
+
+test("combineImportBatches keeps one import record per selected file", async () => {
+  const firstBatch = normalizeImportBatch(
+    await parseImportFile(fileFromText(monzoCsvText("tx_1"), "october.csv")),
+  );
+  const secondBatch = normalizeImportBatch(
+    await parseImportFile(fileFromText(monzoCsvText("tx_2"), "november.csv")),
+  );
+  const combinedBatch = assignImportBatchAccount(
+    combineImportBatches([firstBatch, secondBatch]),
+    {
+      id: "acc_main",
+      name: "Main Current Account",
+      type: "current",
+      institution: "Monzo",
+      accountKind: "actual",
+      currency: "GBP",
+    },
+  );
+  const financeData = financeDataFromEditedImport(combinedBatch);
+
+  assert.equal(combinedBatch.sourceFileCount, 2);
+  assert.equal(combinedBatch.rows.length, 2);
+  assert.equal(financeData.imports.length, 2);
+  assert.deepEqual(
+    financeData.imports.map((importRecord) => importRecord.fileName),
+    ["october.csv", "november.csv"],
+  );
+  assert.deepEqual(
+    financeData.imports.map((importRecord) => importRecord.transactionCount),
+    [1, 1],
+  );
+});
+
+test("mergeFinanceData checks every import record from a combined import", async () => {
+  const firstBatch = assignImportBatchAccount(
+    normalizeImportBatch(
+      await parseImportFile(fileFromText(monzoCsvText("tx_1"), "october.csv")),
+    ),
+    {
+      id: "acc_main",
+      name: "Main Current Account",
+      type: "current",
+      institution: "Monzo",
+      accountKind: "actual",
+      currency: "GBP",
+    },
+  );
+  const secondBatch = normalizeImportBatch(
+    await parseImportFile(fileFromText(monzoCsvText("tx_2"), "november.csv")),
+  );
+  const existingData = financeDataFromEditedImport(firstBatch);
+  const combinedData = financeDataFromEditedImport(
+    assignImportBatchAccount(
+      combineImportBatches([firstBatch, secondBatch]),
+      {
+        id: "acc_main",
+        name: "Main Current Account",
+        type: "current",
+        institution: "Monzo",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ),
+  );
+
+  assert.throws(
+    () => mergeFinanceData(existingData, combinedData),
+    DuplicateImportError,
+  );
 });
 
 test("Monzo CSV pot transfers create actual child accounts and mirror transactions", async () => {
@@ -571,10 +645,10 @@ test("daily net worth does not double count Trading 212 account-valued positions
   assert.deepEqual(series, [{ date: "2026-01-31", netWorth: 55307.74 }]);
 });
 
-function monzoCsvText() {
+function monzoCsvText(transactionId = "tx_1") {
   return [
     "Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In",
-    'tx_1,15/10/2023,02:09:11,Card payment,Grab,🚕,Eating out,-3.21,GBP,-61000.00,IDR,"ride, late",Gedung,,Grab* A-123,,-3.21,',
+    `${transactionId},15/10/2023,02:09:11,Card payment,Grab,🚕,Eating out,-3.21,GBP,-61000.00,IDR,"ride, late",Gedung,,Grab* A-123,,-3.21,`,
   ].join("\n");
 }
 

@@ -115,15 +115,17 @@ export function assignImportBatchAccount(batch, account) {
 export function financeDataFromEditedImport(editedBatch, options = {}) {
   const accounts = editedBatch.accounts ?? [];
   const accountIds = accounts.map((account) => account.id);
-  const importRecord = createImportRecord({
-    sourceType: editedBatch.sourceType,
-    fileHash: editedBatch.fileHash,
-    fileName: editedBatch.fileName,
-    provider: editedBatch.sourceProvider,
-    accountIds,
-    transactionCount: editedBatch.rows.length,
-    importedAt: editedBatch.importedAt,
-  });
+  const importRecords = importSourcesFromBatch(editedBatch).map((source) =>
+    createImportRecord({
+      sourceType: source.sourceType || editedBatch.sourceType,
+      fileHash: source.fileHash,
+      fileName: source.fileName,
+      provider: source.sourceProvider || editedBatch.sourceProvider,
+      accountIds,
+      transactionCount: source.transactionCount ?? editedBatch.rows.length,
+      importedAt: source.importedAt || editedBatch.importedAt,
+    }),
+  );
 
   return normalizeFinanceData({
     metadata: {
@@ -140,7 +142,7 @@ export function financeDataFromEditedImport(editedBatch, options = {}) {
     investments: (editedBatch.investments ?? []).map(importValueEntity),
     debts: [],
     valueHistory: (editedBatch.valueHistory ?? []).map(importValueHistory),
-    imports: [importRecord],
+    imports: importRecords,
     importRules: options.importRules ?? [],
   });
 }
@@ -173,6 +175,52 @@ export async function importFileToEditedBatch(file, rules = []) {
 }
 
 /**
+ * Combines same-source staged batches so a user can review several files at once.
+ */
+export function combineImportBatches(batches = []) {
+  if (batches.length === 0) {
+    throw new Error("Choose at least one import file.");
+  }
+
+  if (batches.length === 1) {
+    return batches[0];
+  }
+
+  const [firstBatch] = batches;
+  const incompatibleBatch = batches.find(
+    (batch) =>
+      batch.adapterId !== firstBatch.adapterId ||
+      batch.sourceType !== firstBatch.sourceType ||
+      batch.sourceProvider !== firstBatch.sourceProvider ||
+      batch.allowAccountRetarget === false !==
+        (firstBatch.allowAccountRetarget === false),
+  );
+
+  if (incompatibleBatch) {
+    throw new Error(
+      "Bulk import review supports files from one source type at a time.",
+    );
+  }
+
+  return {
+    ...firstBatch,
+    fileName: `${batches.length} files`,
+    fileHash: "",
+    importedAt: firstBatch.importedAt,
+    sourceFileCount: batches.length,
+    importSources: batches.flatMap(importSourcesFromBatch),
+    accounts: mergeById(batches.flatMap((batch) => batch.accounts ?? [])),
+    balances: mergeById(batches.flatMap((batch) => batch.balances ?? [])),
+    rows: uniqueRows(batches.flatMap((batch) => batch.rows ?? [])),
+    investments: mergeById(batches.flatMap((batch) => batch.investments ?? [])),
+    valueHistory: mergeById(
+      batches.flatMap((batch) => batch.valueHistory ?? []),
+    ),
+    warnings: batches.flatMap((batch) => batch.warnings ?? []),
+  };
+}
+
+/**
  * Maps a staged import row into the transaction shape stored in the vault.
  */
 function importRowToTransaction(row) {
@@ -190,6 +238,54 @@ function importRowToTransaction(row) {
     sourceType: row.sourceType,
     sourceId: row.sourceId,
   };
+}
+
+function importSourcesFromBatch(batch) {
+  if (Array.isArray(batch.importSources) && batch.importSources.length > 0) {
+    return batch.importSources;
+  }
+
+  return [
+    {
+      sourceType: batch.sourceType,
+      sourceProvider: batch.sourceProvider,
+      fileHash: batch.fileHash,
+      fileName: batch.fileName,
+      transactionCount: batch.rows?.length ?? 0,
+      importedAt: batch.importedAt,
+    },
+  ];
+}
+
+function mergeById(items) {
+  const merged = new Map();
+
+  items.forEach((item) => {
+    if (item?.id) {
+      merged.set(item.id, item);
+    }
+  });
+
+  return [...merged.values()];
+}
+
+function uniqueRows(rows) {
+  const usedIds = new Set();
+
+  return rows.map((row, index) => {
+    const baseId = text(row.id) || `bulk-row-${index + 1}`;
+    let id = baseId;
+    let duplicateIndex = 2;
+
+    while (usedIds.has(id)) {
+      id = `${baseId}:bulk-${duplicateIndex}`;
+      duplicateIndex += 1;
+    }
+
+    usedIds.add(id);
+
+    return id === row.id ? row : { ...row, id };
+  });
 }
 
 /**

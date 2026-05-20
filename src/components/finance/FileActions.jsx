@@ -15,7 +15,7 @@ export function FileActions({
     <>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => importInputRef.current.click()}>
-          Import File
+          Import Files
         </Button>
         <Button variant="outline" onClick={() => pfaInputRef.current.click()}>
           Open PFA
@@ -44,6 +44,7 @@ export function FileActions({
 
       <input
         accept=".xlsx,.csv,.pdf,.json"
+        multiple
         onChange={onImportFileChange}
         ref={importInputRef}
         type="file"
