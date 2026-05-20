@@ -12,22 +12,26 @@ export async function extractPdfText(file) {
 
   const document = await pdfjs.getDocument({ data: bytes }).promise;
   const pages = [];
+  const pageRows = [];
 
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
     const textContent = await page.getTextContent();
+    const rows = rowsFromItems(textContent.items);
 
-    pages.push(textFromItems(textContent.items));
+    pages.push(textFromRows(rows));
+    pageRows.push(rows);
   }
 
   return {
     pageCount: document.numPages,
     pages,
+    pageRows,
     text: pages.join("\n\n"),
   };
 }
 
-function textFromItems(items) {
+function rowsFromItems(items) {
   const rows = [];
 
   items
@@ -49,10 +53,16 @@ function textFromItems(items) {
       rows.push({ y: item.y, items: [item] });
     });
 
+  return rows.map((row) => ({
+    y: row.y,
+    items: row.items.sort((left, right) => left.x - right.x),
+  }));
+}
+
+function textFromRows(rows) {
   return rows
     .map((row) =>
       row.items
-        .sort((left, right) => left.x - right.x)
         .map((item) => item.text)
         .join(" ")
         .replace(/\s+/gu, " ")

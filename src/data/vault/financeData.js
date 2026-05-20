@@ -3,6 +3,7 @@ import { Transaction } from "../../models/Transaction.js";
 import { User } from "../../models/User.js";
 
 export const FINANCE_DATA_SCHEMA_VERSION = 1;
+const TRADING212_PDF_SOURCE_PREFIX = "trading212-pdf:";
 
 const ARRAY_KEYS = [
   "accounts",
@@ -51,7 +52,7 @@ export function createEmptyFinanceData(overrides = {}) {
 
 export function normalizeFinanceData(data = {}) {
   const now = new Date().toISOString();
-  const normalized = {
+  let normalized = {
     schemaVersion: Number(data.schemaVersion || FINANCE_DATA_SCHEMA_VERSION),
     metadata: {
       createdAt: data.metadata?.createdAt || now,
@@ -70,6 +71,8 @@ export function normalizeFinanceData(data = {}) {
     imports: toArray(data.imports).map(normalizeImportRecord),
     importRules: toArray(data.importRules).map(normalizeImportRule),
   };
+
+  normalized = canonicalizeTrading212AccountAliases(normalized);
 
   validateFinanceData(normalized);
   return normalized;
@@ -514,6 +517,206 @@ function mergeById(existingItems, incomingItems) {
   incomingItems.forEach((item) => merged.set(item.id, item));
 
   return [...merged.values()];
+}
+
+function canonicalizeTrading212AccountAliases(data) {
+  const aliases = trading212AccountAliases(data.accounts);
+
+  if (aliases.size === 0) {
+    return data;
+  }
+
+  return {
+    ...data,
+    accounts: canonicalizeTrading212Accounts(data.accounts, aliases),
+    balances: data.balances.map((balance) => ({
+      ...balance,
+      id: canonicalTrading212SourceScopedId(balance.id, aliases),
+      accountId: resolveAccountAlias(balance.accountId, aliases),
+      sourceId: canonicalTrading212SourceScopedId(balance.sourceId, aliases),
+    })),
+    transactions: data.transactions.map((transaction) => ({
+      ...transaction,
+      id: canonicalTrading212SourceScopedId(transaction.id, aliases),
+      account: resolveAccountAlias(transaction.account, aliases),
+      sourceId: canonicalTrading212SourceScopedId(transaction.sourceId, aliases),
+    })),
+    investments: data.investments.map((investment) => ({
+      ...investment,
+      id: canonicalTrading212EntityId(investment.id, aliases),
+    })),
+    valueHistory: data.valueHistory.map((history) => ({
+      ...history,
+      id: canonicalTrading212SourceScopedId(history.id, aliases),
+      entityId: canonicalTrading212EntityId(history.entityId, aliases),
+    })),
+    imports: data.imports.map((importRecord) => ({
+      ...importRecord,
+      accountIds: importRecord.accountIds.map((accountId) =>
+        resolveAccountAlias(accountId, aliases),
+      ),
+    })),
+  };
+}
+
+function trading212AccountAliases(accounts) {
+  const byKey = new Map();
+
+  accounts
+    .filter(isTrading212Account)
+    .forEach((account) => {
+      const key = trading212AccountKey(account);
+
+      if (!key) {
+        return;
+      }
+
+      const group = byKey.get(key) ?? { numeric: null, legacy: [] };
+
+      if (isNumericTrading212Account(account)) {
+        group.numeric = account;
+      } else if (isLegacyTrading212Account(account)) {
+        group.legacy.push(account);
+      }
+
+      byKey.set(key, group);
+    });
+
+  const aliases = new Map();
+
+  byKey.forEach(({ numeric, legacy }) => {
+    if (!numeric) {
+      return;
+    }
+
+    legacy.forEach((account) => {
+      aliases.set(account.id, numeric.id);
+    });
+  });
+
+  return aliases;
+}
+
+function canonicalizeTrading212Accounts(accounts, aliases) {
+  const merged = new Map();
+
+  accounts.forEach((account) => {
+    const next = {
+      ...account,
+      id: resolveAccountAlias(account.id, aliases),
+      parentAccountId: resolveAccountAlias(account.parentAccountId, aliases),
+    };
+    const existing = merged.get(next.id);
+
+    if (!existing || prefersTrading212Account(next, existing)) {
+      merged.set(next.id, next);
+    }
+  });
+
+  return [...merged.values()];
+}
+
+function prefersTrading212Account(candidate, existing) {
+  if (isNumericTrading212Account(candidate) && !isNumericTrading212Account(existing)) {
+    return true;
+  }
+
+  if (!isNumericTrading212Account(candidate) && isNumericTrading212Account(existing)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isTrading212Account(account = {}) {
+  return (
+    text(account.sourceProvider) === "trading212" ||
+    text(account.institution) === "Trading 212" ||
+    text(account.id).startsWith("trading212:")
+  );
+}
+
+function isNumericTrading212Account(account = {}) {
+  return /^trading212:\d+$/u.test(text(account.id)) || /^\d+$/u.test(text(account.sourceId));
+}
+
+function isLegacyTrading212Account(account = {}) {
+  return ["invest", "stocks-isa", "cash-isa", "cfd"].includes(trading212AccountSourceId(account));
+}
+
+function trading212AccountKey(account = {}) {
+  const sourceId = trading212AccountSourceId(account);
+
+  if (sourceId) {
+    return sourceId;
+  }
+
+  const type = text(account.type);
+
+  if (type === "investment") {
+    return "invest";
+  }
+
+  if (["stocks-isa", "cash-isa", "cfd"].includes(type)) {
+    return type;
+  }
+
+  return "";
+}
+
+function trading212AccountSourceId(account = {}) {
+  const sourceId = text(account.sourceId);
+
+  if (["invest", "stocks-isa", "cash-isa", "cfd"].includes(sourceId)) {
+    return sourceId;
+  }
+
+  return text(account.id).match(/^trading212:(invest|stocks-isa|cash-isa|cfd)$/u)?.[1] ?? "";
+}
+
+function resolveAccountAlias(accountId, aliases) {
+  const value = text(accountId);
+
+  return aliases.get(value) ?? value;
+}
+
+function canonicalTrading212EntityId(value, aliases) {
+  let next = text(value);
+
+  aliases.forEach((canonicalId, legacyId) => {
+    if (next === legacyId || next.startsWith(`${legacyId}:`)) {
+      next = `${canonicalId}${next.slice(legacyId.length)}`;
+    }
+  });
+
+  return next;
+}
+
+function canonicalTrading212SourceScopedId(value, aliases) {
+  let next = text(value);
+
+  aliases.forEach((canonicalId, legacyId) => {
+    const legacySourceId = legacyId.slice("trading212:".length);
+    const canonicalSourceId = canonicalId.slice("trading212:".length);
+
+    if (next === legacySourceId) {
+      next = canonicalSourceId;
+      return;
+    }
+
+    if (next.startsWith(`${legacySourceId}:`)) {
+      next = `${canonicalSourceId}${next.slice(legacySourceId.length)}`;
+      return;
+    }
+
+    if (next.startsWith(`${TRADING212_PDF_SOURCE_PREFIX}${legacySourceId}:`)) {
+      next = `${TRADING212_PDF_SOURCE_PREFIX}${canonicalSourceId}${next.slice(
+        TRADING212_PDF_SOURCE_PREFIX.length + legacySourceId.length,
+      )}`;
+    }
+  });
+
+  return next;
 }
 
 function mergeImports(existingImports, incomingImports) {

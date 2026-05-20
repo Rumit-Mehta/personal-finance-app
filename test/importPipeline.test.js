@@ -10,7 +10,10 @@ import {
   normalizeImportBatch,
   parseImportFile,
 } from "../src/data/imports/index.js";
-import { deriveDailyNetWorthSeries } from "../src/data/balanceHistory.js";
+import {
+  deriveDailyAccountNetWorthStackSeries,
+  deriveDailyNetWorthSeries,
+} from "../src/data/balanceHistory.js";
 import { parseCsv } from "../src/data/imports/csv.js";
 import {
   appDataFromFinanceData,
@@ -22,7 +25,10 @@ import {
   openPfaVault,
 } from "../src/data/vault/index.js";
 import { monzoJsonToFinanceData } from "../src/data/vault/adapters/monzo.js";
-import { normalizeTrading212Statement } from "../src/data/imports/adapters/trading212Pdf.js";
+import {
+  normalizeTrading212Statement,
+  trading212PdfAdapter,
+} from "../src/data/imports/adapters/trading212Pdf.js";
 
 if (!globalThis.crypto) {
   Object.defineProperty(globalThis, "crypto", {
@@ -389,6 +395,13 @@ test("account activity is derived from the current balance", () => {
         currency: "GBP",
         openingBalance: 25,
       },
+      {
+        id: "rounded_zero_account",
+        name: "Rounded Zero Account",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 0.1 + 0.2 - 0.3,
+      },
     ],
     balances: [
       {
@@ -407,6 +420,9 @@ test("account activity is derived from the current balance", () => {
   assert.equal(appData.accounts.get("inactive_account").balance, 0);
   assert.equal(appData.accounts.get("inactive_account").isActive, false);
   assert.equal(appData.accounts.get("inactive_account").isInactive, true);
+  assert.equal(appData.accounts.get("rounded_zero_account").balance > 0, true);
+  assert.equal(appData.accounts.get("rounded_zero_account").isActive, false);
+  assert.equal(appData.accounts.get("rounded_zero_account").isInactive, true);
 });
 
 test("daily net worth anchors forward from manual balance corrections", () => {
@@ -484,6 +500,208 @@ test("daily net worth anchors forward from manual balance corrections", () => {
   ]);
 });
 
+test("daily account net worth stack keeps accounts separate with institution metadata", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "acc_current",
+        name: "Current",
+        institution: "Monzo",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 100,
+      },
+      {
+        id: "acc_pot",
+        name: "Holiday Pot",
+        institution: "Monzo",
+        accountKind: "actual",
+        currency: "GBP",
+        openingBalance: 20,
+      },
+      {
+        id: "budget",
+        name: "Budget envelope",
+        institution: "Planning",
+        accountKind: "virtual",
+        currency: "GBP",
+        openingBalance: 999,
+      },
+    ],
+    transactions: [
+      {
+        id: "txn_current",
+        account: "acc_current",
+        date: "2026-01-02",
+        amount: -25,
+      },
+      {
+        id: "txn_pot",
+        account: "acc_pot",
+        date: "2026-01-02",
+        amount: 5,
+      },
+      {
+        id: "txn_virtual",
+        account: "budget",
+        date: "2026-01-02",
+        amount: 1000,
+      },
+    ],
+    balances: [
+      createManualBalanceSnapshot({
+        accountId: "acc_current",
+        date: "2026-01-02",
+        balance: 60,
+        currency: "GBP",
+      }),
+    ],
+  });
+  const stack = deriveDailyAccountNetWorthStackSeries(financeData, {
+    startDate: "2026-01-01",
+    endDate: "2026-01-02",
+  });
+
+  assert.deepEqual(stack.keys, ["account:acc_current", "account:acc_pot"]);
+  assert.equal(stack.seriesMeta["account:acc_current"].label, "Current");
+  assert.equal(stack.seriesMeta["account:acc_current"].group, "Monzo");
+  assert.equal(stack.seriesMeta["account:acc_pot"].group, "Monzo");
+  assert.match(stack.seriesMeta["account:acc_current"].color, /^hsl\(\d+ 72% 40%\)$/u);
+  assert.match(stack.seriesMeta["account:acc_pot"].color, /^hsl\(\d+ 72% 48%\)$/u);
+  assert.equal(stack.data[0]["account:acc_current"], 100);
+  assert.equal(stack.data[0]["account:acc_pot"], 20);
+  assert.equal(stack.data[0].values["account:acc_current"], 100);
+  assert.equal(stack.data[0].total, 120);
+  assert.equal(stack.data[1]["account:acc_current"], 60);
+  assert.equal(stack.data[1]["account:acc_pot"], 25);
+  assert.equal(stack.data[1].total, 85);
+});
+
+test("daily account net worth stack includes investment providers without Trading 212 double counting", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "cash",
+        name: "Cash",
+        institution: "Bank",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ],
+    balances: [
+      {
+        id: "cash:2026-01-31",
+        accountId: "cash",
+        date: "2026-01-31",
+        balance: 100,
+        currency: "GBP",
+      },
+    ],
+    investments: [
+      {
+        id: "inv_1",
+        name: "ETF",
+        provider: "Vanguard",
+        currency: "GBP",
+        currentValue: 50,
+      },
+      {
+        id: "inv_2",
+        name: "Bond",
+        provider: "Vanguard",
+        currency: "GBP",
+        currentValue: 25,
+      },
+      {
+        id: "trading212:position",
+        name: "Trading 212 position",
+        provider: "Trading 212",
+        currency: "GBP",
+        currentValue: 999,
+      },
+    ],
+    valueHistory: [
+      {
+        id: "hist_1",
+        entityType: "investment",
+        entityId: "inv_1",
+        date: "2026-01-31",
+        value: 50,
+      },
+      {
+        id: "hist_2",
+        entityType: "investment",
+        entityId: "inv_2",
+        date: "2026-01-31",
+        value: 25,
+      },
+      {
+        id: "hist_3",
+        entityType: "investment",
+        entityId: "trading212:position",
+        date: "2026-01-31",
+        value: 999,
+      },
+    ],
+  });
+  const stack = deriveDailyAccountNetWorthStackSeries(financeData, {
+    startDate: "2026-01-31",
+    endDate: "2026-01-31",
+  });
+
+  assert.deepEqual(stack.keys, ["account:cash", "investment:Vanguard"]);
+  assert.equal(stack.seriesMeta["investment:Vanguard"].label, "Vanguard investments");
+  assert.equal(stack.data[0]["investment:Vanguard"], 75);
+  assert.equal(stack.data[0].total, 175);
+  assert.equal(stack.seriesMeta["investment:Trading 212"], undefined);
+});
+
+test("daily account net worth stack preserves negative account totals", () => {
+  const financeData = normalizeFinanceData({
+    accounts: [
+      {
+        id: "savings",
+        name: "Savings",
+        institution: "Bank",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+      {
+        id: "overdraft",
+        name: "Overdraft",
+        institution: "Bank",
+        accountKind: "actual",
+        currency: "GBP",
+      },
+    ],
+    balances: [
+      {
+        id: "savings:2026-01-31",
+        accountId: "savings",
+        date: "2026-01-31",
+        balance: 100,
+        currency: "GBP",
+      },
+      {
+        id: "overdraft:2026-01-31",
+        accountId: "overdraft",
+        date: "2026-01-31",
+        balance: -50,
+        currency: "GBP",
+      },
+    ],
+  });
+  const stack = deriveDailyAccountNetWorthStackSeries(financeData, {
+    startDate: "2026-01-31",
+    endDate: "2026-01-31",
+  });
+
+  assert.equal(stack.data[0].positiveTotal, 100);
+  assert.equal(stack.data[0].negativeTotal, -50);
+  assert.equal(stack.data[0].total, 50);
+  assert.equal(stack.data[0]["account:overdraft"], -50);
+});
+
 test("PFA vault round trip preserves importRules", async () => {
   const stagedBatch = normalizeImportBatch(
     await parseImportFile(fileFromText(monzoCsvText())),
@@ -558,6 +776,124 @@ test("Trading 212 PDF adapter normalizes statement activity and snapshots", () =
   assert.equal(stagedBatch.investments[0].id, "trading212:3266446:isin:IE00B4ND3602");
   assert.equal(stagedBatch.investments[0].currentValue, 2116.5);
   assert.equal(stagedBatch.valueHistory[0].date, "2026-01-31");
+});
+
+test("Trading 212 PDF adapter dates monthly activity statements at month end", () => {
+  const rawBatch = trading212RawBatch();
+  rawBatch.pages[0] = rawBatch.pages[0].replace(
+    "Generated by Trading 212 UK Ltd. on 2 February 2026, covering from 31.12.2025 22:00 (UTC) to 31.01.2026 21:59 (UTC).",
+    "Generated by Trading 212 UK Ltd. on 1 February 2025, covering all January 2025 activity and accurate to 22:00 (UTC) on the last day of the month.",
+  );
+  rawBatch.statementText = rawBatch.pages.join("\n\n");
+
+  const stagedBatch = normalizeTrading212Statement(rawBatch);
+
+  assert.equal(stagedBatch.statement.generatedAt, "2025-02-01");
+  assert.equal(stagedBatch.statement.periodStart, "2025-01-01T00:00:00.000Z");
+  assert.equal(stagedBatch.statement.periodEnd, "2025-01-31T22:00:00.000Z");
+  assert.equal(stagedBatch.statement.statementDate, "2025-01-31");
+  assert.equal(stagedBatch.balances[0].date, "2025-01-31");
+  assert.equal(stagedBatch.valueHistory[0].date, "2025-01-31");
+});
+
+test("Trading 212 PDF adapter detects monthly and annual statements", () => {
+  assert.equal(trading212PdfAdapter.detect({ text: trading212RawBatch().statementText }), true);
+  assert.equal(trading212PdfAdapter.detect({ text: trading212AnnualRawBatch().statementText }), true);
+});
+
+test("Trading 212 annual PDF adapter normalizes year-end balances only", () => {
+  const stagedBatch = normalizeTrading212Statement(trading212AnnualRawBatch());
+  const balancesByAccountId = new Map(
+    stagedBatch.balances.map((balance) => [balance.accountId, balance]),
+  );
+
+  assert.equal(stagedBatch.sourceType, "trading212-pdf");
+  assert.equal(stagedBatch.allowAccountRetarget, false);
+  assert.equal(stagedBatch.statement.periodStart, "2022-04-05T22:00:00.000Z");
+  assert.equal(stagedBatch.statement.periodEnd, "2023-04-05T22:00:00.000Z");
+  assert.equal(stagedBatch.statement.statementDate, "2023-04-05");
+  assert.equal(stagedBatch.accounts.length, 4);
+  assert.equal(stagedBatch.balances.length, 4);
+  assert.equal(balancesByAccountId.get("trading212:3104719").balance, 7.16);
+  assert.equal(balancesByAccountId.get("trading212:3305085").balance, 0.03);
+  assert.equal(balancesByAccountId.get("trading212:3266446").balance, 28523.17);
+  assert.equal(balancesByAccountId.get("trading212:32376833").balance, 0);
+  assert.equal(balancesByAccountId.get("trading212:3104719").date, "2023-04-05");
+  assert.match(balancesByAccountId.get("trading212:3104719").notes, /annual statement/u);
+  assert.equal(stagedBatch.rows.length, 0);
+  assert.equal(stagedBatch.investments.length, 0);
+  assert.equal(stagedBatch.valueHistory.length, 0);
+});
+
+test("Trading 212 annual and monthly imports merge into the same accounts", () => {
+  const monthlyData = financeDataFromEditedImport(
+    normalizeTrading212Statement(trading212RawBatch()),
+  );
+  const annualData = financeDataFromEditedImport(
+    normalizeTrading212Statement(trading212AnnualRawBatch()),
+  );
+  const merged = mergeFinanceData(monthlyData, annualData);
+  const tradingAccounts = merged.accounts.filter((account) =>
+    account.id.startsWith("trading212:"),
+  );
+  const investBalances = merged.balances.filter(
+    (balance) => balance.accountId === "trading212:3104719",
+  );
+
+  assert.equal(tradingAccounts.length, 4);
+  assert.equal(
+    tradingAccounts.filter((account) => account.id === "trading212:3104719").length,
+    1,
+  );
+  assert.equal(investBalances.length, 2);
+  assert.equal(
+    investBalances.some(
+      (balance) => balance.date.slice(0, 10) === "2023-04-05" && balance.balance === 7.16,
+    ),
+    true,
+  );
+});
+
+test("Trading 212 annual imports absorb legacy monthly fallback accounts", () => {
+  const monthlyData = financeDataFromEditedImport(
+    normalizeTrading212Statement(trading212RawBatchWithoutAccountIds()),
+  );
+  const annualData = financeDataFromEditedImport(
+    normalizeTrading212Statement(trading212AnnualRawBatch()),
+  );
+  const merged = mergeFinanceData(monthlyData, annualData);
+  const tradingAccounts = merged.accounts.filter((account) =>
+    account.id.startsWith("trading212:"),
+  );
+
+  assert.equal(tradingAccounts.length, 4);
+  assert.equal(merged.accounts.some((account) => account.id === "trading212:invest"), false);
+  assert.equal(
+    merged.balances.some((balance) => balance.accountId === "trading212:invest"),
+    false,
+  );
+  assert.equal(
+    merged.transactions.some((transaction) => transaction.account === "trading212:invest"),
+    false,
+  );
+  assert.equal(
+    merged.investments.some((investment) => investment.id.startsWith("trading212:stocks-isa:")),
+    false,
+  );
+  assert.equal(
+    merged.valueHistory.some((history) =>
+      history.entityId.startsWith("trading212:stocks-isa:"),
+    ),
+    false,
+  );
+  assert.equal(
+    merged.balances.some(
+      (balance) =>
+        balance.accountId === "trading212:3104719" &&
+        balance.date.slice(0, 10) === "2026-01-31",
+    ),
+    true,
+  );
 });
 
 test("Trading 212 edited import persists investments and value history", () => {
@@ -770,5 +1106,139 @@ function trading212RawBatch() {
     pageCount: pages.length,
     pages,
     statementText: pages.join("\n\n"),
+  };
+}
+
+function trading212RawBatchWithoutAccountIds() {
+  const rawBatch = trading212RawBatch();
+
+  rawBatch.pages = rawBatch.pages.map((page) =>
+    page
+      .split("\n")
+      .filter((line) => !line.includes("Account ID:"))
+      .join("\n"),
+  );
+  rawBatch.statementText = rawBatch.pages.join("\n\n");
+
+  return rawBatch;
+}
+
+function trading212AnnualRawBatch() {
+  const pageRows = [
+    [
+      layoutRow(521, [[250, "Annual Statement - 2022 / 2023"]]),
+      layoutRow(496, [[386, "Overview"]]),
+      layoutRow(476, [
+        [
+          188,
+          "This statement covers the period from 05.04.2022 at 22:00 (UTC) to 05.04.2023 at 22:00 (UTC). Results include applicable FX and third-party fees.",
+        ],
+      ]),
+      layoutRow(429, [
+        [30, "Trading 212 Invest"],
+        [231, "Trading 212 CFD"],
+        [432, "Trading 212 Stocks ISA"],
+        [633, "Trading 212 Cash ISA"],
+      ]),
+      layoutRow(416, [
+        [30, "Account ID: 3104719"],
+        [231, "Account ID: 3305085"],
+        [432, "Account ID: 3266446"],
+        [633, "Account ID: 32376833"],
+      ]),
+      layoutRow(397, [
+        [35, "Closed result"],
+        [154, "\u00a3-0.02"],
+        [236, "Closed result"],
+        [356, "\u00a30.00"],
+        [437, "Closed result"],
+        [549, "\u00a3-6,828.37"],
+        [638, "Account value"],
+        [758, "\u00a30.00"],
+      ]),
+      layoutRow(376, [
+        [35, "Net Dividends"],
+        [156, "\u00a30.00"],
+        [236, "Dividend adjustments"],
+        [356, "\u00a30.00"],
+        [437, "Net Dividends"],
+        [557, "\u00a30.00"],
+      ]),
+      layoutRow(355, [
+        [35, "Net distributions"],
+        [156, "\u00a30.00"],
+        [249, "Received"],
+        [357, "\u00a30.00"],
+        [437, "Net distributions"],
+        [553, "\u00a3248.96"],
+      ]),
+      layoutRow(334, [
+        [35, "Bonus"],
+        [156, "\u00a37.20"],
+        [249, "Deducted"],
+        [357, "\u00a30.00"],
+        [437, "Open result"],
+        [549, "\u00a3-5,940.88"],
+      ]),
+      layoutRow(313, [
+        [35, "Open result"],
+        [156, "\u00a30.00"],
+        [236, "Open result"],
+        [356, "\u00a30.00"],
+        [437, "Open result change"],
+        [549, "\u00a3-1,620.62"],
+      ]),
+      layoutRow(293, [
+        [35, "Open result change"],
+        [156, "\u00a30.00"],
+        [236, "Open result change"],
+        [356, "\u00a30.00"],
+        [437, "Number of disposals"],
+        [562, "13"],
+      ]),
+      layoutRow(271, [
+        [35, "Number of disposals"],
+        [162, "1"],
+        [236, "Overnight interest"],
+        [356, "\u00a30.00"],
+        [437, "Account value"],
+        [548, "\u00a328,523.17"],
+      ]),
+      layoutRow(250, [
+        [35, "Account value"],
+        [155, "\u00a37.16"],
+        [236, "Number of disposals"],
+        [363, "0"],
+      ]),
+      layoutRow(231, [
+        [236, "Account value"],
+        [356, "\u00a30.03"],
+      ]),
+    ],
+  ];
+  const pages = pageRows.map((rows) =>
+    rows
+      .map((row) => row.items.map((item) => item.text).join(" "))
+      .join("\n"),
+  );
+
+  return {
+    adapterId: "trading212-pdf",
+    sourceType: "trading212-pdf",
+    sourceProvider: "trading212",
+    fileName: "Trading 212 Annual Statement 2022.pdf",
+    fileHash: "hash-212-annual",
+    importedAt: "2023-04-06T12:00:00.000Z",
+    pageCount: pages.length,
+    pages,
+    pageRows,
+    statementText: pages.join("\n\n"),
+  };
+}
+
+function layoutRow(y, entries) {
+  return {
+    y,
+    items: entries.map(([x, text]) => ({ text, x, y })),
   };
 }

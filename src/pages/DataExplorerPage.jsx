@@ -435,7 +435,7 @@ export function DataExplorerPage({ financeData, importPreview, onDashboard }) {
             />
             <span className="sr-only">Search {activeDataset.label}</span>
             <input
-              className="w-full pl-9"
+              className="data-explorer-search-input w-full"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search current section"
               type="search"

@@ -61,7 +61,7 @@ export class Account {
   }
 
   get isActive() {
-    return Number(this.balance) !== 0;
+    return roundedCurrencyValue(this.balance) !== 0;
   }
 
   get isInactive() {
@@ -106,6 +106,10 @@ function compareBalanceSnapshots(left, right) {
 
 function sourcePriority(snapshot) {
   return snapshot.sourceType === "manual" ? 1 : 0;
+}
+
+function roundedCurrencyValue(value) {
+  return Math.round(Number(value) * 100) / 100;
 }
 
 function dayKey(value) {

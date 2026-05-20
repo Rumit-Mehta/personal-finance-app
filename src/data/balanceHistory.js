@@ -53,6 +53,58 @@ export function deriveDailyNetWorthSeries(financeData, options = {}) {
     .map(([date, netWorth]) => ({ date, netWorth }));
 }
 
+export function deriveDailyAccountNetWorthStackSeries(financeData, options = {}) {
+  const data = normalizeFinanceData(financeData);
+  const range = dateRange(data, options);
+
+  if (!range) {
+    return emptyStackSeries();
+  }
+
+  const actualAccounts = data.accounts.filter(
+    (account) => account.accountKind !== "virtual",
+  );
+  const accountIds = new Set(actualAccounts.map((account) => account.id));
+  const accountMeta = actualAccounts.map((account) => ({
+    key: accountSeriesKey(account.id),
+    kind: "account",
+    accountId: account.id,
+    label: account.name || account.id,
+    group: account.institution || account.sourceProvider || account.name || account.id,
+    currency: account.currency,
+  }));
+  const investmentProviderSeries = deriveDailyInvestmentProviderValues(
+    data,
+    options,
+  );
+  const seriesItems = withSeriesColors([
+    ...accountMeta,
+    ...investmentProviderSeries.meta,
+  ]);
+  const keys = seriesItems.map((item) => item.key);
+  const seriesMeta = Object.fromEntries(
+    seriesItems.map((item) => [item.key, item]),
+  );
+  const rows = createStackRows(range, keys);
+
+  deriveDailyAccountBalances(data, options).forEach((point) => {
+    if (!accountIds.has(point.accountId)) {
+      return;
+    }
+
+    setStackValue(rows, point.date, accountSeriesKey(point.accountId), point.balance);
+  });
+  investmentProviderSeries.points.forEach((point) => {
+    setStackValue(rows, point.date, point.key, point.value);
+  });
+
+  return {
+    data: finalizeStackRows(rows, keys),
+    keys,
+    seriesMeta,
+  };
+}
+
 function deriveDailyInvestmentValues(financeData, options = {}) {
   const data = normalizeFinanceData(financeData);
   const range = dateRange(data, options);
@@ -91,6 +143,71 @@ function deriveDailyInvestmentValues(financeData, options = {}) {
   return [...totalsByDate.entries()].map(([date, value]) => ({ date, value }));
 }
 
+function deriveDailyInvestmentProviderValues(financeData, options = {}) {
+  const data = normalizeFinanceData(financeData);
+  const range = dateRange(data, options);
+
+  if (!range) {
+    return { meta: [], points: [] };
+  }
+
+  const investmentsById = new Map(
+    data.investments.map((investment) => [investment.id, investment]),
+  );
+  const historyByInvestment = groupBy(
+    data.valueHistory.filter(
+      (history) =>
+        history.entityType === "investment" &&
+        !history.entityId.startsWith("trading212:"),
+    ),
+    "entityId",
+  );
+  const providerMeta = new Map();
+  const providerTotalsByDate = new Map();
+
+  historyByInvestment.forEach((historyRows, investmentId) => {
+    const investment = investmentsById.get(investmentId);
+    const provider = investment?.provider || "Investments";
+    const key = investmentProviderSeriesKey(provider);
+    const historyByDate = new Map(
+      historyRows
+        .map((history) => [dayKey(history.date), Number(history.value)])
+        .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate)),
+    );
+    let currentValue = 0;
+
+    providerMeta.set(key, {
+      key,
+      kind: "investmentProvider",
+      provider,
+      label: `${provider} investments`,
+      group: provider,
+      currency: investment?.currency || "GBP",
+    });
+
+    forEachDate(range.startDate, range.endDate, (date) => {
+      if (historyByDate.has(date)) {
+        currentValue = historyByDate.get(date);
+      }
+
+      const providerTotals = providerTotalsByDate.get(key) ?? new Map();
+
+      providerTotals.set(
+        date,
+        roundMoney((providerTotals.get(date) ?? 0) + currentValue),
+      );
+      providerTotalsByDate.set(key, providerTotals);
+    });
+  });
+
+  return {
+    meta: [...providerMeta.values()],
+    points: [...providerTotalsByDate.entries()].flatMap(([key, totals]) =>
+      [...totals.entries()].map(([date, value]) => ({ date, key, value })),
+    ),
+  };
+}
+
 function deriveAccountSeries({ account, transactions, snapshots, startDate, endDate }) {
   const transactionTotalsByDate = totalTransactionsByDate(transactions);
   const snapshotsByDate = snapshotsByDay(snapshots);
@@ -122,6 +239,109 @@ function deriveAccountSeries({ account, transactions, snapshots, startDate, endD
   });
 
   return series;
+}
+
+function emptyStackSeries() {
+  return {
+    data: [],
+    keys: [],
+    seriesMeta: {},
+  };
+}
+
+function createStackRows(range, keys) {
+  const rows = new Map();
+
+  forEachDate(range.startDate, range.endDate, (date) => {
+    const row = { date, total: 0, positiveTotal: 0, negativeTotal: 0, values: {} };
+
+    keys.forEach((key) => {
+      row[key] = 0;
+      row.values[key] = 0;
+    });
+    rows.set(date, row);
+  });
+
+  return rows;
+}
+
+function setStackValue(rows, date, key, value) {
+  const row = rows.get(date);
+
+  if (!row) {
+    return;
+  }
+
+  const roundedValue = roundMoney(value);
+
+  row[key] = roundedValue;
+  row.values[key] = roundedValue;
+}
+
+function finalizeStackRows(rows, keys) {
+  return [...rows.values()].map((row) => {
+    const totals = keys.reduce(
+      (currentTotals, key) => {
+        const value = Number(row[key]) || 0;
+
+        return {
+          total: roundMoney(currentTotals.total + value),
+          positiveTotal:
+            value > 0
+              ? roundMoney(currentTotals.positiveTotal + value)
+              : currentTotals.positiveTotal,
+          negativeTotal:
+            value < 0
+              ? roundMoney(currentTotals.negativeTotal + value)
+              : currentTotals.negativeTotal,
+        };
+      },
+      { total: 0, positiveTotal: 0, negativeTotal: 0 },
+    );
+
+    return {
+      ...row,
+      ...totals,
+    };
+  });
+}
+
+function accountSeriesKey(accountId) {
+  return `account:${accountId}`;
+}
+
+function investmentProviderSeriesKey(provider) {
+  return `investment:${provider || "Investments"}`;
+}
+
+function withSeriesColors(seriesItems) {
+  const groupCounts = new Map();
+
+  return seriesItems.map((item) => {
+    const group = item.group || item.label || item.key;
+    const groupIndex = groupCounts.get(group) ?? 0;
+
+    groupCounts.set(group, groupIndex + 1);
+
+    return {
+      ...item,
+      color: seriesColor(group, groupIndex),
+    };
+  });
+}
+
+function seriesColor(group, groupIndex) {
+  const hue = hashString(group) % 360;
+  const lightness = 40 + (groupIndex % 4) * 8;
+
+  return `hsl(${hue} 72% ${lightness}%)`;
+}
+
+function hashString(value) {
+  return [...String(value)].reduce(
+    (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
+    0,
+  );
 }
 
 function dateRange(data, options) {

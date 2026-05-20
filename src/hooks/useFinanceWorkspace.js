@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { deriveDailyNetWorthSeries } from "@/data/balanceHistory";
+import {
+  deriveDailyAccountNetWorthStackSeries,
+  deriveDailyNetWorthSeries,
+} from "@/data/balanceHistory";
 import {
   applyRulesToImportBatch,
   assignImportBatchAccount,
@@ -120,6 +123,13 @@ export function useFinanceWorkspace() {
   const netWorthSeries = useMemo(
     () =>
       currentFinanceData ? deriveDailyNetWorthSeries(currentFinanceData) : [],
+    [currentFinanceData],
+  );
+  const accountNetWorthStackSeries = useMemo(
+    () =>
+      currentFinanceData
+        ? deriveDailyAccountNetWorthStackSeries(currentFinanceData)
+        : { data: [], keys: [], seriesMeta: {} },
     [currentFinanceData],
   );
   const importPreviewAccountNames = useMemo(
@@ -733,6 +743,7 @@ export function useFinanceWorkspace() {
 
   return {
     accountNames,
+    accountNetWorthStackSeries,
     accounts,
     balanceSnapshotDraft: balanceSnapshotDraftWithDefaults,
     balanceSnapshots,

@@ -139,6 +139,10 @@ select {
   padding: 6px 8px;
 }
 
+.data-explorer-search-input {
+  padding-left: 36px;
+}
+
 .status-message {
   color: oklch(0.42 0.13 150);
 }
