@@ -8,9 +8,7 @@ export function AccountsTable({ accountNames, accounts }) {
   const [showInactiveAccounts, setShowInactiveAccounts] = useState(false);
   const activeAccounts = accounts.filter((account) => account.isActive);
   const inactiveAccounts = accounts.filter((account) => account.isInactive);
-  const visibleAccounts = showInactiveAccounts
-    ? accounts
-    : activeAccounts;
+  const visibleAccounts = showInactiveAccounts ? accounts : activeAccounts;
   const accountSummary = showInactiveAccounts
     ? `Showing all ${accounts.length} accounts, including ${inactiveAccounts.length} inactive`
     : `Showing ${activeAccounts.length} active accounts`;
@@ -40,13 +38,11 @@ export function AccountsTable({ accountNames, accounts }) {
         <thead>
           <tr>
             <th>Name</th>
-            <th>Type</th>
+            <th>ID</th>
             <th>Institution</th>
-            <th>Kind</th>
-            <th>Status</th>
+            <th>Type</th>
             <th>Parent</th>
             <th>Balance</th>
-            <th>Snapshots</th>
             <th>Transactions</th>
           </tr>
         </thead>
@@ -54,10 +50,9 @@ export function AccountsTable({ accountNames, accounts }) {
           {visibleAccounts.map((account) => (
             <tr key={account.id}>
               <td>{account.name}</td>
-              <td>{account.type}</td>
+              <td>{account.id}</td>
               <td>{account.institution}</td>
-              <td>{account.accountKind}</td>
-              <td>{account.isActive ? "Active" : "Inactive"}</td>
+              <td>{account.type}</td>
               <td>
                 {account.parentAccountId
                   ? (accountNames.get(account.parentAccountId)?.name ??
@@ -65,7 +60,6 @@ export function AccountsTable({ accountNames, accounts }) {
                   : ""}
               </td>
               <td>{formatCurrency(account.balance)}</td>
-              <td>{account.balanceSnapshotCount}</td>
               <td>{account.transactionCount}</td>
             </tr>
           ))}
