@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  deriveDailyAccountNetWorthStackSeries,
+  deriveDailyInstitutionNetWorthStackSeries,
   deriveDailyNetWorthSeries,
 } from "@/data/balanceHistory";
 import {
@@ -125,10 +125,10 @@ export function useFinanceWorkspace() {
       currentFinanceData ? deriveDailyNetWorthSeries(currentFinanceData) : [],
     [currentFinanceData],
   );
-  const accountNetWorthStackSeries = useMemo(
+  const institutionNetWorthStackSeries = useMemo(
     () =>
       currentFinanceData
-        ? deriveDailyAccountNetWorthStackSeries(currentFinanceData)
+        ? deriveDailyInstitutionNetWorthStackSeries(currentFinanceData)
         : { data: [], keys: [], seriesMeta: {} },
     [currentFinanceData],
   );
@@ -743,7 +743,6 @@ export function useFinanceWorkspace() {
 
   return {
     accountNames,
-    accountNetWorthStackSeries,
     accounts,
     balanceSnapshotDraft: balanceSnapshotDraftWithDefaults,
     balanceSnapshots,
@@ -771,6 +770,7 @@ export function useFinanceWorkspace() {
     importPreviewAccountNames,
     importRules,
     importInputRef,
+    institutionNetWorthStackSeries,
     message,
     newAccountDraft,
     netWorthSeries,

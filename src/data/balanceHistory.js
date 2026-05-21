@@ -105,6 +105,87 @@ export function deriveDailyAccountNetWorthStackSeries(financeData, options = {})
   };
 }
 
+export function deriveDailyInstitutionNetWorthStackSeries(financeData, options = {}) {
+  const data = normalizeFinanceData(financeData);
+  const range = dateRange(data, options);
+
+  if (!range) {
+    return emptyStackSeries();
+  }
+
+  const actualAccounts = data.accounts.filter(
+    (account) => account.accountKind !== "virtual",
+  );
+  const institutionMeta = new Map();
+  const institutionKeyByAccount = new Map();
+
+  actualAccounts.forEach((account) => {
+    const label = institutionLabelForAccount(account);
+    const key = institutionSeriesKey(label);
+
+    institutionKeyByAccount.set(account.id, key);
+    upsertInstitutionMeta(institutionMeta, key, {
+      key,
+      kind: "institution",
+      label,
+      group: label,
+      currency: account.currency,
+    });
+  });
+
+  const investmentProviderSeries = deriveDailyInvestmentProviderValues(
+    data,
+    options,
+  );
+
+  investmentProviderSeries.meta.forEach((meta) => {
+    const label = institutionLabel(meta.provider);
+    const key = institutionSeriesKey(label);
+
+    upsertInstitutionMeta(institutionMeta, key, {
+      key,
+      kind: "institution",
+      label,
+      group: label,
+      currency: meta.currency,
+    });
+  });
+
+  const seriesItems = withSeriesColors(
+    [...institutionMeta.values()].sort(compareInstitutionStackOrder),
+  );
+  const keys = seriesItems.map((item) => item.key);
+  const seriesMeta = Object.fromEntries(
+    seriesItems.map((item) => [item.key, item]),
+  );
+  const rows = createStackRows(range, keys);
+
+  deriveDailyAccountBalances(data, options).forEach((point) => {
+    const key = institutionKeyByAccount.get(point.accountId);
+
+    if (!key) {
+      return;
+    }
+
+    addStackValue(rows, point.date, key, point.balance);
+  });
+
+  investmentProviderSeries.points.forEach((point) => {
+    const provider = investmentProviderSeries.meta.find(
+      (meta) => meta.key === point.key,
+    )?.provider;
+    const key = institutionSeriesKey(institutionLabel(provider));
+
+    addStackValue(rows, point.date, key, point.value);
+  });
+
+  return {
+    data: finalizeStackRows(rows, keys),
+    keys,
+    seriesMeta,
+  };
+}
+
 function deriveDailyInvestmentValues(financeData, options = {}) {
   const data = normalizeFinanceData(financeData);
   const range = dateRange(data, options);
@@ -209,6 +290,24 @@ function deriveDailyInvestmentProviderValues(financeData, options = {}) {
 }
 
 function deriveAccountSeries({ account, transactions, snapshots, startDate, endDate }) {
+  if (hasManualBalance(account) && snapshots.length === 0) {
+    return deriveManualBalanceSeries({
+      account,
+      transactions,
+      startDate,
+      endDate,
+    });
+  }
+
+  if (usesValuationSnapshots(account) && snapshots.length > 0) {
+    return deriveSnapshotValuationSeries({
+      account,
+      snapshots,
+      startDate,
+      endDate,
+    });
+  }
+
   const transactionTotalsByDate = totalTransactionsByDate(transactions);
   const snapshotsByDate = snapshotsByDay(snapshots);
   const simulationStartDate = earliestDate([
@@ -236,6 +335,52 @@ function deriveAccountSeries({ account, transactions, snapshots, startDate, endD
         currency: account.currency,
       });
     }
+  });
+
+  backfillBeforeFirstSnapshot(series, transactionTotalsByDate, snapshotsByDate);
+
+  return series;
+}
+
+function deriveManualBalanceSeries({ account, transactions, startDate, endDate }) {
+  const transactionTotalsByDate = totalTransactionsByDate(transactions);
+  const dates = datesBetween(startDate, endDate);
+  const series = new Array(dates.length);
+  let balance = Number(account.manualBalance);
+
+  for (let index = dates.length - 1; index >= 0; index -= 1) {
+    const date = dates[index];
+
+    series[index] = {
+      date,
+      accountId: account.id,
+      balance,
+      currency: account.currency,
+    };
+    balance = roundMoney(balance - (transactionTotalsByDate.get(date) ?? 0));
+  }
+
+  return series;
+}
+
+function deriveSnapshotValuationSeries({ account, snapshots, startDate, endDate }) {
+  const snapshotsByDate = snapshotsByDay(snapshots);
+  const series = [];
+  let balance = Number(account.openingBalance);
+
+  forEachDate(startDate, endDate, (date) => {
+    const daySnapshots = snapshotsByDate.get(date);
+
+    if (daySnapshots?.length) {
+      balance = daySnapshots.at(-1).balance;
+    }
+
+    series.push({
+      date,
+      accountId: account.id,
+      balance,
+      currency: account.currency,
+    });
   });
 
   return series;
@@ -278,6 +423,19 @@ function setStackValue(rows, date, key, value) {
   row.values[key] = roundedValue;
 }
 
+function addStackValue(rows, date, key, value) {
+  const row = rows.get(date);
+
+  if (!row) {
+    return;
+  }
+
+  const roundedValue = roundMoney((row[key] ?? 0) + value);
+
+  row[key] = roundedValue;
+  row.values[key] = roundedValue;
+}
+
 function finalizeStackRows(rows, keys) {
   return [...rows.values()].map((row) => {
     const totals = keys.reduce(
@@ -308,6 +466,10 @@ function finalizeStackRows(rows, keys) {
 
 function accountSeriesKey(accountId) {
   return `account:${accountId}`;
+}
+
+function institutionSeriesKey(institution) {
+  return `institution:${institution || "Unassigned"}`;
 }
 
 function investmentProviderSeriesKey(provider) {
@@ -342,6 +504,101 @@ function hashString(value) {
     (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
     0,
   );
+}
+
+function upsertInstitutionMeta(meta, key, nextMeta) {
+  if (!meta.has(key)) {
+    meta.set(key, nextMeta);
+  }
+}
+
+function institutionLabelForAccount(account) {
+  return institutionLabel(
+    account.institution || account.sourceProvider || account.name || account.id,
+  );
+}
+
+function institutionLabel(value) {
+  const label = text(value);
+  const normalizedLabel = label.toLowerCase().replace(/\s+/gu, "");
+
+  if (!label) {
+    return "Unassigned";
+  }
+
+  if (["trading212", "t212"].includes(normalizedLabel)) {
+    return "Trading 212";
+  }
+
+  if (normalizedLabel === "monzo") {
+    return "Monzo";
+  }
+
+  return label
+    .replace(/[-_]+/gu, " ")
+    .replace(/\b\w/gu, (character) => character.toUpperCase());
+}
+
+function compareInstitutionStackOrder(left, right) {
+  const priorityDifference =
+    institutionStackPriority(left.label) - institutionStackPriority(right.label);
+
+  if (priorityDifference !== 0) {
+    return priorityDifference;
+  }
+
+  return left.label.localeCompare(right.label);
+}
+
+function institutionStackPriority(label) {
+  return label === "Trading 212" ? 0 : 1;
+}
+
+function usesValuationSnapshots(account) {
+  const sourceProvider = text(account.sourceProvider).toLowerCase();
+  const institution = text(account.institution).toLowerCase();
+  const type = text(account.type).toLowerCase();
+
+  return (
+    sourceProvider === "trading212" ||
+    institution === "trading 212" ||
+    ["investment", "stocks-isa", "cash-isa", "cfd"].includes(type)
+  );
+}
+
+function hasManualBalance(account) {
+  return account.manualBalance !== null && account.manualBalance !== undefined;
+}
+
+function backfillBeforeFirstSnapshot(series, transactionTotalsByDate, snapshotsByDate) {
+  const firstSnapshotDate = earliestDate([...snapshotsByDate.keys()]);
+
+  if (!firstSnapshotDate) {
+    return;
+  }
+
+  const firstSnapshot = snapshotsByDate.get(firstSnapshotDate)?.at(-1);
+
+  if (firstSnapshot?.sourceType === "manual") {
+    return;
+  }
+
+  const firstSnapshotIndex = series.findIndex(
+    (point) => point.date === firstSnapshotDate,
+  );
+
+  if (firstSnapshotIndex <= 0) {
+    return;
+  }
+
+  let balance = series[firstSnapshotIndex].balance;
+
+  for (let index = firstSnapshotIndex - 1; index >= 0; index -= 1) {
+    const nextDate = series[index + 1].date;
+
+    balance = roundMoney(balance - (transactionTotalsByDate.get(nextDate) ?? 0));
+    series[index].balance = balance;
+  }
 }
 
 function dateRange(data, options) {
@@ -434,6 +691,16 @@ function forEachDate(startDate, endDate, callback) {
   }
 }
 
+function datesBetween(startDate, endDate) {
+  const dates = [];
+
+  forEachDate(startDate, endDate, (date) => {
+    dates.push(date);
+  });
+
+  return dates;
+}
+
 function earliestDate(dates) {
   return dates.filter(Boolean).sort((left, right) => left.localeCompare(right))[0] ?? "";
 }
@@ -452,6 +719,14 @@ function dayKey(value) {
   }
 
   return String(value).slice(0, 10);
+}
+
+function text(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
 }
 
 function roundMoney(value) {

@@ -8,15 +8,15 @@ import {
 } from "@/components/ui/card";
 import { ParentSize } from "@visx/responsive";
 
-export function ChartsSection({ accountNetWorthStackSeries }) {
+export function ChartsSection({ institutionNetWorthStackSeries }) {
   return (
     <section>
       <h2>Charts</h2>
       <div className="grid gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Net worth by account</CardTitle>
-            <CardDescription>Daily account balances with range selection</CardDescription>
+            <CardTitle>Net worth by institution</CardTitle>
+            <CardDescription>Daily balances grouped by provider</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[420px] w-full">
@@ -24,7 +24,7 @@ export function ChartsSection({ accountNetWorthStackSeries }) {
                 {({ width, height }) =>
                   width > 0 && height > 0 ? (
                     <BrushChart
-                      stackSeries={accountNetWorthStackSeries}
+                      stackSeries={institutionNetWorthStackSeries}
                       width={width}
                       height={height}
                     />

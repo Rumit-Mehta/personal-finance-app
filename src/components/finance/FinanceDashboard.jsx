@@ -31,7 +31,7 @@ export function FinanceDashboard({ profileName, workspace }) {
       />
 
       <ChartsSection
-        accountNetWorthStackSeries={workspace.accountNetWorthStackSeries}
+        institutionNetWorthStackSeries={workspace.institutionNetWorthStackSeries}
       />
 
       <StatusMessages error={workspace.error} message={workspace.message} />

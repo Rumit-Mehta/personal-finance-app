@@ -74,10 +74,13 @@ function BrushChart({
   );
   const fullDateDomain = useMemo(() => paddedDateDomain(data), [data]);
   const visibleValueDomain = useMemo(
-    () => stackValueDomain(visibleData),
-    [visibleData],
+    () => stackValueDomain(visibleData, keys),
+    [keys, visibleData],
   );
-  const fullValueDomain = useMemo(() => stackValueDomain(data), [data]);
+  const fullValueDomain = useMemo(
+    () => stackValueDomain(data, keys),
+    [data, keys],
+  );
 
   const dateScale = useMemo(
     () =>
@@ -211,7 +214,7 @@ function BrushChart({
   if (!hasData) {
     return (
       <div className="flex h-full min-h-[240px] items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
-        No account balance history yet
+        No balance history yet
       </div>
     );
   }
@@ -249,7 +252,6 @@ function BrushChart({
             y0={(stackPoint) => valueScale(stackPoint[0]) || 0}
             y1={(stackPoint) => valueScale(stackPoint[1]) || 0}
             value={(datum, key) => Number(datum[key]) || 0}
-            offset="diverging"
             curve={curveMonotoneX}
           >
             {({ stacks, path }) =>
@@ -360,7 +362,6 @@ function BrushChart({
               y0={(stackPoint) => brushValueScale(stackPoint[0]) || 0}
               y1={(stackPoint) => brushValueScale(stackPoint[1]) || 0}
               value={(datum, key) => Number(datum[key]) || 0}
-              offset="diverging"
               curve={curveMonotoneX}
             >
               {({ stacks, path }) =>
@@ -459,9 +460,20 @@ function paddedDateDomain(data) {
   return [start, end];
 }
 
-function stackValueDomain(data) {
-  const minValue = min(data, (datum) => datum.negativeTotal) ?? 0;
-  const maxValue = max(data, (datum) => datum.positiveTotal) ?? 0;
+function stackValueDomain(data, keys) {
+  const extents = data.flatMap((datum) => {
+    let total = 0;
+    const values = [0];
+
+    keys.forEach((key) => {
+      total += Number(datum[key]) || 0;
+      values.push(total);
+    });
+
+    return values;
+  });
+  const minValue = min(extents) ?? 0;
+  const maxValue = max(extents) ?? 0;
 
   if (minValue === 0 && maxValue === 0) {
     return [-1, 1];
