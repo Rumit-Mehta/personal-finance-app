@@ -10,7 +10,7 @@ export const DEFAULT_RULE_DRAFT = {
 
 export const DEFAULT_NEW_ACCOUNT_DRAFT = {
   id: "monzo:csv",
-  name: "Monzo CSV",
+  name: "Monzo Current Account",
   type: "current",
   institution: "Monzo",
   currency: "GBP",
@@ -103,12 +103,24 @@ export function chooseInitialImportAccount(existingAccounts, suggestedAccount) {
     existingAccounts.find((account) => account.id === suggestedAccount.id) ||
     existingAccounts.find(
       (account) =>
+        isMainImportAccountCandidate(account) &&
         account.institution &&
         account.institution.toLowerCase() ===
           suggestedAccount.institution.toLowerCase(),
     ) ||
-    existingAccounts[0] ||
     suggestedAccount
+  );
+}
+
+export function isExistingImportAccount(existingAccounts, account) {
+  return existingAccounts.some((existingAccount) => existingAccount.id === account.id);
+}
+
+function isMainImportAccountCandidate(account) {
+  return (
+    account.accountKind !== "virtual" &&
+    !account.parentAccountId &&
+    text(account.type).toLowerCase() !== "pot"
   );
 }
 

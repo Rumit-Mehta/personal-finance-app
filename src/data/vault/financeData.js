@@ -4,6 +4,8 @@ import { User } from "../../models/User.js";
 
 export const FINANCE_DATA_SCHEMA_VERSION = 1;
 const TRADING212_PDF_SOURCE_PREFIX = "trading212-pdf:";
+const MONZO_CSV_ACCOUNT_ID = "monzo:csv";
+const MONZO_CSV_ACCOUNT_NAME = "Monzo Current Account";
 
 const ARRAY_KEYS = [
   "accounts",
@@ -73,6 +75,7 @@ export function normalizeFinanceData(data = {}) {
   };
 
   normalized = canonicalizeTrading212AccountAliases(normalized);
+  normalized = canonicalizeMonzoCsvMainAccount(normalized);
 
   validateFinanceData(normalized);
   return normalized;
@@ -678,6 +681,185 @@ function resolveAccountAlias(accountId, aliases) {
   const value = text(accountId);
 
   return aliases.get(value) ?? value;
+}
+
+function canonicalizeMonzoCsvMainAccount(data) {
+  const accountsById = new Map(data.accounts.map((account) => [account.id, account]));
+
+  if (!needsMonzoCsvMainAccountRepair(data, accountsById)) {
+    return {
+      ...data,
+      accounts: data.accounts.map(normalizeMonzoCsvMainAccountLabel),
+    };
+  }
+
+  const mainAccount = monzoCsvMainAccount(data.accounts);
+  const mainAccountId = mainAccount.id;
+  const repairedAccounts = data.accounts.map((account) => {
+    const renamedAccount = normalizeMonzoCsvMainAccountLabel(account);
+
+    if (isMonzoPotWithNonMonzoParent(renamedAccount, accountsById)) {
+      return {
+        ...renamedAccount,
+        parentAccountId: mainAccountId,
+      };
+    }
+
+    return renamedAccount;
+  });
+  const hasMainAccount = repairedAccounts.some(
+    (account) => account.id === mainAccountId,
+  );
+
+  if (!hasMainAccount) {
+    repairedAccounts.push(mainAccount);
+  }
+
+  return {
+    ...data,
+    accounts: repairedAccounts,
+    balances: data.balances.map((balance) =>
+      isMisassignedMonzoCsvAccount(balance.accountId, accountsById) &&
+      text(balance.sourceType) === "monzo-csv"
+        ? { ...balance, accountId: mainAccountId }
+        : balance,
+    ),
+    transactions: data.transactions.map((transaction) =>
+      isMisassignedMonzoCsvAccount(transaction.account, accountsById) &&
+      text(transaction.sourceType) === "monzo-csv"
+        ? { ...transaction, account: mainAccountId }
+        : transaction,
+    ),
+    imports: data.imports.map((importRecord) =>
+      text(importRecord.sourceType) === "monzo-csv"
+        ? {
+            ...importRecord,
+            accountIds: uniqueTextValues(
+              [
+                mainAccountId,
+                ...importRecord.accountIds.map((accountId) =>
+                  isMisassignedMonzoCsvAccount(accountId, accountsById)
+                    ? mainAccountId
+                    : accountId,
+                ),
+              ].filter(Boolean),
+            ),
+          }
+        : importRecord,
+    ),
+  };
+}
+
+function needsMonzoCsvMainAccountRepair(data, accountsById) {
+  return (
+    data.accounts.some((account) =>
+      isMonzoPotWithNonMonzoParent(account, accountsById),
+    ) ||
+    data.transactions.some(
+      (transaction) =>
+        text(transaction.sourceType) === "monzo-csv" &&
+        isMisassignedMonzoCsvAccount(transaction.account, accountsById),
+    ) ||
+    data.balances.some(
+      (balance) =>
+        text(balance.sourceType) === "monzo-csv" &&
+        isMisassignedMonzoCsvAccount(balance.accountId, accountsById),
+    )
+  );
+}
+
+function monzoCsvMainAccount(accounts) {
+  const existingMainAccount =
+    accounts.find((account) => account.id === MONZO_CSV_ACCOUNT_ID) ||
+    accounts.find(
+      (account) => isMonzoAccount(account) && isMainCashAccount(account),
+    );
+
+  if (existingMainAccount) {
+    return normalizeMonzoCsvMainAccountLabel(existingMainAccount);
+  }
+
+  return {
+    id: MONZO_CSV_ACCOUNT_ID,
+    name: MONZO_CSV_ACCOUNT_NAME,
+    type: "current",
+    institution: "Monzo",
+    accountKind: "actual",
+    parentAccountId: "",
+    currency: monzoCurrency(accounts),
+    openingBalance: 0,
+    manualBalance: null,
+    sourceProvider: "monzo",
+    sourceId: MONZO_CSV_ACCOUNT_ID,
+  };
+}
+
+function normalizeMonzoCsvMainAccountLabel(account) {
+  if (
+    account.id !== MONZO_CSV_ACCOUNT_ID ||
+    (account.name && account.name !== "Monzo CSV")
+  ) {
+    return account;
+  }
+
+  return {
+    ...account,
+    name: MONZO_CSV_ACCOUNT_NAME,
+  };
+}
+
+function isMonzoPotWithNonMonzoParent(account, accountsById) {
+  if (!isMonzoPotAccount(account)) {
+    return false;
+  }
+
+  if (!account.parentAccountId) {
+    return false;
+  }
+
+  return !isMonzoAccount(accountsById.get(account.parentAccountId));
+}
+
+function isMisassignedMonzoCsvAccount(accountId, accountsById) {
+  const account = accountsById.get(text(accountId));
+
+  return !isMonzoAccount(account);
+}
+
+function isMonzoPotAccount(account = {}) {
+  return (
+    isMonzoAccount(account) &&
+    (text(account.type).toLowerCase() === "pot" ||
+      text(account.id).startsWith("monzo:pot:") ||
+      text(account.parentAccountId))
+  );
+}
+
+function isMainCashAccount(account = {}) {
+  return (
+    !text(account.parentAccountId) &&
+    text(account.accountKind) !== "virtual" &&
+    text(account.type).toLowerCase() !== "pot"
+  );
+}
+
+function isMonzoAccount(account = {}) {
+  return (
+    text(account.sourceProvider) === "monzo" ||
+    text(account.institution) === "Monzo" ||
+    text(account.id).startsWith("monzo:")
+  );
+}
+
+function monzoCurrency(accounts) {
+  return (
+    accounts.find((account) => isMonzoAccount(account) && account.currency)
+      ?.currency || "GBP"
+  );
+}
+
+function uniqueTextValues(values) {
+  return [...new Set(values.map(text).filter(Boolean))];
 }
 
 function canonicalTrading212EntityId(value, aliases) {

@@ -37,6 +37,7 @@ import {
   DEFAULT_RULE_DRAFT,
   defaultImportAccountFromBatch,
   importRuleSetFromDraft,
+  isExistingImportAccount,
   newAccountFromDraft,
 } from "@/utils/importPreview";
 
@@ -507,7 +508,9 @@ export function useFinanceWorkspace() {
       existingAccounts,
       suggestedAccount,
     );
-    const initialMode = existingAccounts.length > 0 ? "existing" : "create";
+    const initialMode = isExistingImportAccount(existingAccounts, initialAccount)
+      ? "existing"
+      : "create";
 
     setImportAccountMode(initialMode);
     setSelectedImportAccountId(

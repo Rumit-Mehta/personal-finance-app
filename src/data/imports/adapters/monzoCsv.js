@@ -1,4 +1,5 @@
 const ACCOUNT_ID = "monzo:csv";
+const ACCOUNT_NAME = "Monzo Current Account";
 const REQUIRED_HEADERS = [
   "Transaction ID",
   "Date",
@@ -114,7 +115,7 @@ function normalizeMonzoCsvRows(rawBatch) {
     accounts: [
       {
         id: ACCOUNT_ID,
-        name: "Monzo CSV",
+        name: ACCOUNT_NAME,
         type: "current",
         institution: "Monzo",
         accountKind: "actual",
